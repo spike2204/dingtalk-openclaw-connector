@@ -20,6 +20,8 @@
 - ✅ **手动新会话** - 发送 `/new` 或 `新会话` 清空对话历史
 - ✅ **图片自动上传** - 本地图片路径自动上传到钉钉
 - ✅ **主动发送消息** - 支持主动给钉钉个人或群发送消息
+- ✅ **多 Agent 支持** - 支持多个钉钉机器人连接到不同的 Agent，实现角色分工和专业化服务
+- ✅ **Markdown 表格转换** - 自动将 Markdown 表格转换为钉钉支持的文本格式
 
 ## 架构
 
@@ -130,6 +132,58 @@ openclaw plugins list  # 确认 dingtalk-connector 已加载
 | `gatewayToken` | `OPENCLAW_GATEWAY_TOKEN` | Gateway 认证 token（可选） |
 | `gatewayPassword` | — | Gateway 认证 password（可选，与 token 二选一） |
 | `sessionTimeout` | — | 会话超时时间，单位毫秒（默认 1800000 = 30分钟） |
+
+## 多 Agent 配置
+
+钉钉 Connector 支持多 Agent 模式，可以配置多个钉钉机器人连接到不同的 OpenClaw Agent，实现角色分工和专业化服务。
+
+### 核心配置
+
+在 `~/.openclaw/openclaw.json` 中配置多个钉钉账号和 Agent 绑定：
+
+```json5
+{
+  "channels": {
+    "dingtalk-connector": {
+      "enabled": true,
+      "accounts": {
+        "bot1": {
+          "enabled": true,
+          "clientId": "ding_bot1_app_key",
+          "clientSecret": "bot1_secret"
+        },
+        "bot2": {
+          "enabled": true,
+          "clientId": "ding_bot2_app_key",
+          "clientSecret": "bot2_secret"
+        }
+      }
+    }
+  },
+  "bindings": [
+    {
+      "agentId": "ding-bot1",
+      "match": {
+        "channel": "dingtalk-connector",
+        "accountId": "bot1"
+      }
+    },
+    {
+      "agentId": "ding-bot2",
+      "match": {
+        "channel": "dingtalk-connector",
+        "accountId": "bot2"
+      }
+    }
+  ]
+}
+```
+
+### 官方文档
+
+详细的配置指南和架构说明，请参考 OpenClaw 官方文档：
+
+- [OpenClaw 多 Agent 架构配置指南](https://gist.github.com/smallnest/c5c13482740fd179e40070e620f66a52)
 
 ## 会话命令
 

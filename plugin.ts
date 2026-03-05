@@ -2939,7 +2939,6 @@ const dingtalkPlugin = {
         gatewayToken: { type: 'string', default: '', description: 'Gateway auth token (Bearer)' },
         gatewayPassword: { type: 'string', default: '', description: 'Gateway auth password (alternative to token)' },
         sessionTimeout: { type: 'number', default: 1800000, description: 'Session timeout in ms (default 30min)' },
-        botDingUid: { type: 'string', default: '', description: 'Bot\'s DingTalk user ID for mention detection (optional)' },
         debug: { type: 'boolean', default: false },
       },
       required: ['clientId', 'clientSecret'],
