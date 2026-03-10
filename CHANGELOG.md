@@ -6,6 +6,24 @@
 This document records all significant changes. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and version numbers follow [Semantic Versioning](https://semver.org/).
 
+## [0.7.4] - 2026-03-09
+
+### 新增功能 / Added Features
+- ✅ **按会话区分 Session** - 支持按单聊、群聊、不同群分别维护独立会话，单聊与群聊、不同群之间的对话上下文互不干扰  
+  **Session by conversation** - Support separate sessions for direct chat, group chat, and different groups; conversation context is isolated between DMs, group chats, and different groups
+- ✅ **记忆隔离/共享配置** - 新增 `sharedMemoryAcrossConversations` 配置，控制单 Agent 场景下是否在不同会话间共享记忆；默认 `false` 实现群聊与私聊、不同群之间的记忆隔离  
+  **Memory isolation/sharing config** - Added `sharedMemoryAcrossConversations` option to control whether memory is shared across conversations in single-Agent mode; default `false` isolates memory between DMs, group chats, and different groups
+- ✅ **Gateway Session 格式增强** - Session key 支持 `group:conversationId` 格式，便于 Gateway 识别群聊场景  
+  **Gateway session format enhancement** - Session key supports `group:conversationId` format for Gateway to identify group chat scenarios
+- ✅ **X-OpenClaw-Memory-User 支持** - 向 Gateway 传递记忆归属用户标识，支持 Gateway 侧记忆管理  
+  **X-OpenClaw-Memory-User support** - Pass memory user identifier to Gateway for memory management
+
+### 配置 / Configuration
+- 新增 `separateSessionByConversation`（默认：`true`）- 是否按单聊/群聊/群区分 session  
+  Added `separateSessionByConversation` (default: `true`) - Whether to separate sessions by direct/group/different groups
+- 新增 `sharedMemoryAcrossConversations`（默认：`false`）- 单 Agent 场景下是否在不同会话间共享记忆；`false` 时不同群聊、群聊与私聊记忆隔离  
+  Added `sharedMemoryAcrossConversations` (default: `false`) - Whether to share memory across conversations in single-Agent mode; when `false`, memory is isolated between different groups and between DMs and groups
+
 ## [0.7.3] - 2026-03-09
 
 ### 修复 / Fixes

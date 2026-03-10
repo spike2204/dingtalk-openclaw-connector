@@ -2,7 +2,7 @@
 
 以下提供两种方案连接到 [OpenClaw](https://openclaw.ai) Gateway，分别是钉钉机器人和钉钉 DEAP Agent。
 
-> 📝 **版本信息**：当前版本 v0.7.3 | [查看变更日志](CHANGELOG.md) | [发布说明](docs/RELEASE_NOTES_V0.7.3.md) | [发布指南](RELEASE.md)
+> 📝 **版本信息**：当前版本 v0.7.4 | [查看变更日志](CHANGELOG.md) | [发布说明](docs/RELEASE_NOTES_V0.7.4.md) | [发布指南](RELEASE.md)
 
 ## 快速导航
 
@@ -18,6 +18,7 @@
 
 - ✅ **AI Card 流式响应** - 打字机效果，实时显示 AI 回复
 - ✅ **会话持久化** - 同一用户的多轮对话共享上下文
+- ✅ **会话与记忆隔离** - 按单聊/群聊/群区分 session，不同场景下的对话上下文互不干扰，可配置跨会话记忆共享
 - ✅ **超时自动新会话** - 默认 30 分钟无活动自动开启新对话
 - ✅ **手动新会话** - 发送 `/new` 或 `新会话` 清空对话历史
 - ✅ **图片自动上传** - 本地图片路径自动上传到钉钉
@@ -90,6 +91,8 @@ openclaw plugins install -l .
       "gatewayToken": "",                 // 可选：Gateway 认证 token, openclaw.json配置中 gateway.auth.token 的值 
       "gatewayPassword": "",              // 可选：Gateway 认证 password（与 token 二选一）
       "sessionTimeout": 1800000,          // 可选：会话超时(ms)，默认 30 分钟
+      "separateSessionByConversation": true,  // 可选：是否按单聊/群聊/群区分 session（默认：true）
+      "sharedMemoryAcrossConversations": false, // 可选：是否在不同会话间共享记忆；false 时群聊与私聊、不同群记忆隔离（默认：false）
       "asyncMode": false,                 // 可选：异步模式，立即回执用户消息，后台处理并推送结果（默认：false）
       "ackText": "🫡 任务已接收"      // 可选：异步模式下的回执消息文本（默认：'🫡 任务已接收，处理中...'）
     }
@@ -143,8 +146,30 @@ openclaw plugins list  # 确认 dingtalk-connector 已加载
 | `gatewayToken` | `OPENCLAW_GATEWAY_TOKEN` | Gateway 认证 token（可选） |
 | `gatewayPassword` | — | Gateway 认证 password（可选，与 token 二选一） |
 | `sessionTimeout` | — | 会话超时时间，单位毫秒（默认 1800000 = 30分钟） |
+| `separateSessionByConversation` | — | 是否按单聊/群聊/群区分 session（默认：true） |
+| `sharedMemoryAcrossConversations` | — | 是否在不同会话间共享记忆；false 时群聊与私聊、不同群记忆隔离（默认：false） |
 | `asyncMode` | — | 异步模式，立即回执用户消息，后台处理并推送结果（默认：false） |
 | `ackText` | — | 异步模式下的回执消息文本（默认：'🫡 任务已接收，处理中...'） |
+
+## 会话与记忆隔离
+
+连接器支持按单聊、群聊、不同群分别维护独立会话和记忆，确保同一用户在不同场景下的对话上下文互不干扰。
+
+### 会话隔离（separateSessionByConversation）
+
+- **默认开启**（`true`）：单聊、群聊、不同群各自拥有独立的 session
+- **关闭**（`false`）：按用户维度维护 session，不区分单聊/群聊（兼容旧行为）
+
+### 记忆隔离（sharedMemoryAcrossConversations）
+
+- **默认关闭**（`false`）：不同群聊、群聊与私聊之间的记忆隔离，AI 不会混淆不同场景下的对话历史
+- **开启**（`true`）：单 Agent 场景下，同一用户在不同会话间共享记忆
+
+### 适用场景
+
+- ✅ 同一机器人在多个群中服务，希望每个群的对话互不干扰
+- ✅ 用户既在私聊也在群聊中使用机器人，希望私聊与群聊上下文分离
+- ✅ 需要跨会话共享记忆时，可设置 `sharedMemoryAcrossConversations: true`
 
 ## 异步模式
 
