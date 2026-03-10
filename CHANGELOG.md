@@ -6,6 +6,26 @@
 This document records all significant changes. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and version numbers follow [Semantic Versioning](https://semver.org/).
 
+## [0.7.5] - 2026-03-10
+
+### 重构 / Refactoring
+- ✅ **OpenClaw session.dmScope 机制** - 会话管理由 OpenClaw Gateway 统一处理，插件不再内部管理会话超时  
+  **OpenClaw session.dmScope mechanism** - Session management is now handled by OpenClaw Gateway, plugin no longer manages session timeout internally
+- ✅ **SessionContext 标准化** - 使用 OpenClaw 标准的 SessionContext JSON 格式传递会话上下文  
+  **SessionContext standardization** - Use OpenClaw standard SessionContext JSON format for session context
+
+### 配置变更 / Configuration Changes
+- 新增 `groupSessionScope`（默认：`group`）- 群聊会话隔离策略：`group`=群共享，`group_sender`=群内用户独立  
+  Added `groupSessionScope` (default: `group`) - Group chat session isolation: `group`=shared, `group_sender`=per-user
+- ⚠️ **废弃** `sessionTimeout` - 会话超时由 OpenClaw Gateway 的 `session.reset` 配置控制  
+  **Deprecated** `sessionTimeout` - Session timeout is now controlled by OpenClaw Gateway's `session.reset` config
+- ⚠️ **废弃** `separateSessionByConversation` - 请使用 `groupSessionScope` 配置群聊会话隔离策略  
+  **Deprecated** `separateSessionByConversation` - Use `groupSessionScope` for group chat session isolation
+
+### 向后兼容 / Backward Compatibility
+- 旧配置 `sessionTimeout` 和 `separateSessionByConversation` 仍可使用，但会打印废弃警告日志  
+  Old configs `sessionTimeout` and `separateSessionByConversation` still work but will print deprecation warnings
+
 ## [0.7.4] - 2026-03-09
 
 ### 新增功能 / Added Features
@@ -19,8 +39,8 @@ and version numbers follow [Semantic Versioning](https://semver.org/).
   **X-OpenClaw-Memory-User support** - Pass memory user identifier to Gateway for memory management
 
 ### 配置 / Configuration
-- 新增 `separateSessionByConversation`（默认：`true`）- 是否按单聊/群聊/群区分 session  
-  Added `separateSessionByConversation` (default: `true`) - Whether to separate sessions by direct/group/different groups
+- 新增 `separateSessionByConversation`（默认：`true`）- 是否按单聊/群聊/群区分 session（0.7.5 已废弃）  
+  Added `separateSessionByConversation` (default: `true`) - Whether to separate sessions by direct/group/different groups (deprecated in 0.7.5)
 - 新增 `sharedMemoryAcrossConversations`（默认：`false`）- 单 Agent 场景下是否在不同会话间共享记忆；`false` 时不同群聊、群聊与私聊记忆隔离  
   Added `sharedMemoryAcrossConversations` (default: `false`) - Whether to share memory across conversations in single-Agent mode; when `false`, memory is isolated between different groups and between DMs and groups
 

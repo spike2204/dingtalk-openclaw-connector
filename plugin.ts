@@ -70,7 +70,7 @@ function isNewSessionCommand(text: string): boolean {
 }
 
 /**
- * 构建 OpenClaw 标准会话上下文
+ * OpenClaw 标准会话上下文
  * 遵循 OpenClaw session.dmScope 机制，让 Gateway 根据配置自动处理会话隔离
  */
 interface SessionContext {
@@ -83,6 +83,10 @@ interface SessionContext {
   groupSubject?: string;
 }
 
+/**
+ * 构建 OpenClaw 标准会话上下文
+ * 遵循 OpenClaw session.dmScope 机制，让 Gateway 根据配置自动处理会话隔离
+ */
 function buildSessionContext(params: {
   accountId: string;
   senderId: string;
@@ -1204,16 +1208,17 @@ async function finishAICard(
 interface GatewayOptions {
   userContent: string;
   systemPrompts: string[];
-  /** OpenClaw 标准会话上下文，遵循 session.dmScope 机制 */
   sessionContext: SessionContext;
   gatewayAuth?: string;  // token 或 password，都用 Bearer 格式
+  /** 记忆归属用户标识，用于 Gateway 区分记忆；sharedMemoryAcrossConversations=true 时传 accountId，false 时传 sessionContext JSON */
+  memoryUser?: string;
   /** 本地图片文件路径列表，用于 OpenClaw AgentMediaPayload */
   imageLocalPaths?: string[];
   log?: any;
 }
 
-async function* streamFromGateway(options: GatewayOptions): AsyncGenerator<string, void, unknown> {
-  const { userContent, systemPrompts, sessionContext, gatewayAuth, imageLocalPaths, log } = options;
+async function* streamFromGateway(options: GatewayOptions, accountId: string): AsyncGenerator<string, void, unknown> {
+  const { userContent, systemPrompts, sessionContext, gatewayAuth, memoryUser, imageLocalPaths, log } = options;
   const rt = getRuntime();
   const gatewayUrl = `http://127.0.0.1:${rt.gateway?.port || 18789}/v1/chat/completions`;
 
@@ -1237,13 +1242,14 @@ async function* streamFromGateway(options: GatewayOptions): AsyncGenerator<strin
   }
   // 使用 HTTP Header 传递 accountId 用于 agent 路由
   // DEFAULT_ACCOUNT_ID 映射到 'main' agent
-  const agentId = sessionContext.accountId === DEFAULT_ACCOUNT_ID ? 'main' : sessionContext.accountId;
+  const agentId = accountId === DEFAULT_ACCOUNT_ID ? 'main' : accountId;
   headers['X-OpenClaw-Agent-Id'] = agentId;
+  if (memoryUser) {
+    headers['X-OpenClaw-Memory-User'] = memoryUser;
+  }
 
-  // 构建 OpenClaw 标准 user 字段，让 Gateway 根据 session.dmScope 配置自动处理会话隔离
-  const userField = JSON.stringify(sessionContext);
-
-  log?.info?.(`[DingTalk][Gateway] POST ${gatewayUrl}, sessionContext=${userField}, messages=${messages.length}`);
+  const sessionContextJson = JSON.stringify(sessionContext);
+  log?.info?.(`[DingTalk][Gateway] POST ${gatewayUrl}, sessionContext=${sessionContextJson}, accountId=${accountId}, messages=${messages.length}`);
 
   const response = await fetch(gatewayUrl, {
     method: 'POST',
@@ -1252,7 +1258,7 @@ async function* streamFromGateway(options: GatewayOptions): AsyncGenerator<strin
       model: 'main',
       messages,
       stream: true,
-      user: userField,  // OpenClaw 标准会话上下文，遵循 session.dmScope 机制
+      user: sessionContextJson,  // OpenClaw 标准会话上下文 JSON，用于 session.dmScope 机制
     }),
   });
 
@@ -2348,10 +2354,10 @@ async function handleDingTalkMessage(params: {
     }
   }
 
-  // ===== Session 管理（遵循 OpenClaw session.dmScope 机制） =====
+  // ===== Session 管理 =====
   const forceNewSession = isNewSessionCommand(content.text);
 
-  // 如果是新会话命令，直接回复确认消息（新会话由 OpenClaw Gateway 处理）
+  // 如果是新会话命令，直接回复确认消息
   if (forceNewSession) {
     await sendMessage(dingtalkConfig, sessionWebhook, '✨ 已开启新会话，之前的对话已清空。', {
       atUserId: !isDirect ? senderId : null,
@@ -2360,7 +2366,14 @@ async function handleDingTalkMessage(params: {
     return;
   }
 
-  // 构建 OpenClaw 标准会话上下文，让 Gateway 根据 dmScope 配置自动处理会话隔离
+  // 构建 OpenClaw 标准会话上下文
+  // 兼容旧配置：sessionTimeout 和 separateSessionByConversation 已废弃，打印警告
+  if (dingtalkConfig.sessionTimeout !== undefined) {
+    log?.warn?.(`[DingTalk][Deprecation] 'sessionTimeout' 配置已废弃，会话超时由 OpenClaw Gateway 的 session.reset 配置控制`);
+  }
+  if (dingtalkConfig.separateSessionByConversation !== undefined) {
+    log?.warn?.(`[DingTalk][Deprecation] 'separateSessionByConversation' 配置已废弃，请使用 'groupSessionScope' 配置群聊会话隔离策略`);
+  }
   const groupSessionScope = dingtalkConfig.groupSessionScope as 'group' | 'group_sender' | undefined;
   const sessionContext = buildSessionContext({
     accountId,
@@ -2371,7 +2384,10 @@ async function handleDingTalkMessage(params: {
     groupSubject: data.conversationTitle,
     groupSessionScope,
   });
-  log?.info?.(`[DingTalk][Session] context=${JSON.stringify(sessionContext)}`);
+  const sessionContextJson = JSON.stringify(sessionContext);
+  log?.info?.(`[DingTalk][Session] context=${sessionContextJson}`);
+
+  const memoryUser = dingtalkConfig.sharedMemoryAcrossConversations === true ? accountId : sessionContextJson;
 
   // Gateway 认证：优先使用 token，其次 password
   const gatewayAuth = dingtalkConfig.gatewayToken || dingtalkConfig.gatewayPassword || '';
@@ -2524,9 +2540,10 @@ async function handleDingTalkMessage(params: {
         systemPrompts,
         sessionContext,
         gatewayAuth,
+        memoryUser,
         imageLocalPaths: imageLocalPaths.length > 0 ? imageLocalPaths : undefined,
         log,
-      })) {
+      }, accountId)) {
         fullResponse += chunk;
       }
 
@@ -2593,9 +2610,10 @@ async function handleDingTalkMessage(params: {
         systemPrompts,
         sessionContext,
         gatewayAuth,
+        memoryUser,
         imageLocalPaths: imageLocalPaths.length > 0 ? imageLocalPaths : undefined,
         log,
-      })) {
+      }, accountId)) {
         accumulated += chunk;
         chunkCount++;
 
@@ -2673,9 +2691,10 @@ async function handleDingTalkMessage(params: {
         systemPrompts,
         sessionContext,
         gatewayAuth,
+        memoryUser,
         imageLocalPaths: imageLocalPaths.length > 0 ? imageLocalPaths : undefined,
         log,
-      })) {
+      }, accountId)) {
         fullResponse += chunk;
       }
 
@@ -3050,9 +3069,10 @@ const dingtalkPlugin = {
         dmPolicy: { type: 'string', enum: ['open', 'pairing', 'allowlist'], default: 'open' },
         allowFrom: { type: 'array', items: { type: 'string' }, description: 'Allowed sender IDs' },
         groupPolicy: { type: 'string', enum: ['open', 'allowlist'], default: 'open' },
-        groupSessionScope: { type: 'string', enum: ['group', 'group_sender'], default: 'group', description: 'Group session isolation: group=shared, group_sender=per-user' },
         gatewayToken: { type: 'string', default: '', description: 'Gateway auth token (Bearer)' },
         gatewayPassword: { type: 'string', default: '', description: 'Gateway auth password (alternative to token)' },
+        groupSessionScope: { type: 'string', enum: ['group', 'group_sender'], default: 'group', description: '群聊会话隔离策略：group=群共享，group_sender=群内用户独立' },
+        sharedMemoryAcrossConversations: { type: 'boolean', default: false, description: '单 agent 场景下是否共享记忆；false 时不同群聊、群聊与私聊记忆隔离' },
         asyncMode: { type: 'boolean', default: false, description: 'Send immediate ack and push final result as a second message' },
         ackText: { type: 'string', default: '🫡 任务已接收，处理中...', description: 'Ack text when asyncMode is enabled' },
         debug: { type: 'boolean', default: false },

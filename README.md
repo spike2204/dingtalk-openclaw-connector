@@ -2,7 +2,7 @@
 
 以下提供两种方案连接到 [OpenClaw](https://openclaw.ai) Gateway，分别是钉钉机器人和钉钉 DEAP Agent。
 
-> 📝 **版本信息**：当前版本 v0.7.3 | [查看变更日志](CHANGELOG.md) | [发布说明](docs/RELEASE_NOTES_V0.7.3.md) | [发布指南](RELEASE.md)
+> 📝 **版本信息**：当前版本 v0.7.4 | [查看变更日志](CHANGELOG.md) | [发布说明](docs/RELEASE_NOTES_V0.7.4.md) | [发布指南](RELEASE.md)
 
 ## 快速导航
 
@@ -18,6 +18,7 @@
 
 - ✅ **AI Card 流式响应** - 打字机效果，实时显示 AI 回复
 - ✅ **会话持久化** - 同一用户的多轮对话共享上下文
+- ✅ **会话与记忆隔离** - 按单聊/群聊/群区分 session，不同场景下的对话上下文互不干扰，可配置跨会话记忆共享
 - ✅ **超时自动新会话** - 默认 30 分钟无活动自动开启新对话
 - ✅ **手动新会话** - 发送 `/new` 或 `新会话` 清空对话历史
 - ✅ **图片自动上传** - 本地图片路径自动上传到钉钉
@@ -90,6 +91,7 @@ openclaw plugins install -l .
       "gatewayToken": "",                 // 可选：Gateway 认证 token, openclaw.json配置中 gateway.auth.token 的值 
       "gatewayPassword": "",              // 可选：Gateway 认证 password（与 token 二选一）
       "groupSessionScope": "group",       // 可选：群聊会话隔离策略，group=群共享，group_sender=群内用户独立（默认：group）
+      "sharedMemoryAcrossConversations": false, // 可选：是否在不同会话间共享记忆；false 时群聊与私聊、不同群记忆隔离（默认：false）
       "asyncMode": false,                 // 可选：异步模式，立即回执用户消息，后台处理并推送结果（默认：false）
       "ackText": "🫡 任务已接收"      // 可选：异步模式下的回执消息文本（默认：'🫡 任务已接收，处理中...'）
     }
@@ -143,8 +145,39 @@ openclaw plugins list  # 确认 dingtalk-connector 已加载
 | `gatewayToken` | `OPENCLAW_GATEWAY_TOKEN` | Gateway 认证 token（可选） |
 | `gatewayPassword` | — | Gateway 认证 password（可选，与 token 二选一） |
 | `groupSessionScope` | — | 群聊会话隔离策略：`group`=群共享，`group_sender`=群内用户独立（默认：group） |
+| `sharedMemoryAcrossConversations` | — | 是否在不同会话间共享记忆；false 时群聊与私聊、不同群记忆隔离（默认：false） |
 | `asyncMode` | — | 异步模式，立即回执用户消息，后台处理并推送结果（默认：false） |
 | `ackText` | — | 异步模式下的回执消息文本（默认：'🫡 任务已接收，处理中...'） |
+
+## 会话与记忆隔离
+
+连接器支持按单聊、群聊、不同群分别维护独立会话和记忆，确保同一用户在不同场景下的对话上下文互不干扰。
+
+### 群聊会话隔离（groupSessionScope）
+
+- **`group`**（默认）：整个群共享一个会话，群内所有用户共用同一个对话上下文
+- **`group_sender`**：群内每个用户独立会话，不同用户的对话上下文互不干扰
+
+### 记忆隔离（sharedMemoryAcrossConversations）
+
+- **默认关闭**（`false`）：不同群聊、群聊与私聊之间的记忆隔离，AI 不会混淆不同场景下的对话历史
+- **开启**（`true`）：单 Agent 场景下，同一用户在不同会话间共享记忆
+
+### 废弃配置
+
+以下配置项已废弃，如果仍在使用会打印警告日志：
+
+| 配置项 | 说明 |
+|--------|------|
+| `sessionTimeout` | 已废弃，会话超时由 OpenClaw Gateway 的 `session.reset` 配置控制 |
+| `separateSessionByConversation` | 已废弃，请使用 `groupSessionScope` 配置群聊会话隔离策略 |
+
+### 适用场景
+
+- ✅ 同一机器人在多个群中服务，希望每个群的对话互不干扰
+- ✅ 群内所有成员共享对话上下文（默认 `groupSessionScope: "group"`）
+- ✅ 群内每个用户独立对话（设置 `groupSessionScope: "group_sender"`）
+- ✅ 需要跨会话共享记忆时，可设置 `sharedMemoryAcrossConversations: true`
 
 ## 异步模式
 
