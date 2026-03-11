@@ -268,6 +268,74 @@ openclaw plugins list  # 确认 dingtalk-connector 已加载
 }
 ```
 
+### 基于单聊/群聊的路由（peer.kind）
+
+连接器支持根据会话类型（单聊/群聊）将消息路由到不同的 Agent。这对于以下场景非常有用：
+
+- **安全隔离**：群聊使用受限功能的 Agent，单聊使用完整功能的 Agent
+- **多角色支持**：不同用户或会话类型分配不同的 Agent
+- **成本优化**：普通用户路由到低成本模型，VIP 用户使用高端模型
+
+#### 配置示例
+
+```json5
+{
+  "bindings": [
+    // 场景1：特定用户的单聊 → main agent（完整功能）
+    {
+      "agentId": "main",
+      "match": {
+        "channel": "dingtalk-connector",
+        "peer": {
+          "kind": "direct",
+          "id": "YOUR_VIP_USER_ID"
+        }
+      }
+    },
+    // 场景2：所有群聊 → guest agent（受限功能）
+    {
+      "agentId": "guest",
+      "match": {
+        "channel": "dingtalk-connector",
+        "peer": {
+          "kind": "group",
+          "id": "*"
+        }
+      }
+    },
+    // 场景3：其他单聊 → guest agent（受限功能）
+    {
+      "agentId": "guest",
+      "match": {
+        "channel": "dingtalk-connector",
+        "peer": {
+          "kind": "direct",
+          "id": "*"
+        }
+      }
+    }
+  ]
+}
+```
+
+#### peer.kind 配置说明
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `peer.kind` | `'direct'` \| `'group'` | 会话类型：`direct` 表示单聊，`group` 表示群聊 |
+| `peer.id` | `string` | 发送者 ID（单聊）或 `*` 通配符匹配所有 |
+
+#### 匹配优先级
+
+bindings 按以下优先级匹配（从高到低）：
+
+1. **peer.kind + peer.id 精确匹配**：指定会话类型和具体用户 ID
+2. **peer.kind + peer.id='*' 通配匹配**：指定会话类型，匹配所有用户
+3. **仅 peer.kind 匹配**：只指定会话类型（无 peer.id）
+4. **accountId 匹配**：按钉钉账号路由
+5. **channel 匹配**：仅指定 channel
+6. **默认 fallback**：使用 `main` agent
+
 ### 官方文档
 
 详细的配置指南和架构说明，请参考 OpenClaw 官方文档：

@@ -1225,6 +1225,136 @@ async function finishAICard(
 
 // ============ Gateway SSE Streaming ============
 
+// ============ Bindings 匹配逻辑 ============
+
+interface BindingMatch {
+  channel?: string;
+  accountId?: string;
+  peer?: {
+    kind?: 'direct' | 'group';
+    id?: string;
+  };
+}
+
+interface Binding {
+  agentId: string;
+  match?: BindingMatch;
+}
+
+/**
+ * 根据 OpenClaw bindings 配置解析 agentId
+ *
+ * 匹配优先级（从高到低）：
+ * 1. peer.kind + peer.id 精确匹配（非 '*'）
+ * 2. peer.kind + peer.id='*' 通配匹配
+ * 3. peer.kind 匹配（无 peer.id）
+ * 4. accountId 匹配
+ * 5. channel 匹配
+ * 6. 默认 fallback
+ *
+ * @param accountId 账号 ID
+ * @param peerKind 会话类型：'direct'（单聊）或 'group'（群聊）
+ * @param peerId 发送者 ID（单聊）或会话 ID（群聊）
+ * @param log 日志对象
+ * @returns 匹配到的 agentId
+ */
+function resolveAgentIdByBindings(
+  accountId: string,
+  peerKind: 'direct' | 'group',
+  peerId: string,
+  log?: any,
+): string {
+  const rt = getRuntime();
+  const defaultAgentId = accountId === DEFAULT_ACCOUNT_ID ? 'main' : accountId;
+
+  // 读取 OpenClaw 配置
+  let bindings: Binding[] = [];
+  try {
+    const configPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
+    if (fs.existsSync(configPath)) {
+      const configContent = fs.readFileSync(configPath, 'utf-8');
+      const config = JSON.parse(configContent);
+      bindings = config.bindings || [];
+    }
+  } catch (err: any) {
+    log?.warn?.(`[DingTalk][Bindings] 读取 OpenClaw 配置失败: ${err.message}`);
+    return defaultAgentId;
+  }
+
+  if (bindings.length === 0) {
+    log?.info?.(`[DingTalk][Bindings] 无 bindings 配置，使用默认 agentId=${defaultAgentId}`);
+    return defaultAgentId;
+  }
+
+  // 筛选 channel='dingtalk-connector' 的 bindings
+  const channelBindings = bindings.filter(b =>
+    !b.match?.channel || b.match.channel === 'dingtalk-connector'
+  );
+
+  if (channelBindings.length === 0) {
+    log?.info?.(`[DingTalk][Bindings] 无匹配 channel 的 bindings，使用默认 agentId=${defaultAgentId}`);
+    return defaultAgentId;
+  }
+
+  log?.info?.(`[DingTalk][Bindings] 开始匹配: accountId=${accountId}, peerKind=${peerKind}, peerId=${peerId}, bindings数量=${channelBindings.length}`);
+
+  // 按优先级匹配
+  // 优先级1: peer.kind + peer.id 精确匹配
+  for (const binding of channelBindings) {
+    const match = binding.match || {};
+    if (match.peer?.kind === peerKind &&
+        match.peer?.id &&
+        match.peer.id !== '*' &&
+        match.peer.id === peerId) {
+      // 还需检查 accountId 是否匹配（如果指定了）
+      if (match.accountId && match.accountId !== accountId) continue;
+      log?.info?.(`[DingTalk][Bindings] 精确匹配 peer.id: agentId=${binding.agentId}`);
+      return binding.agentId || defaultAgentId;
+    }
+  }
+
+  // 优先级2: peer.kind + peer.id='*' 通配匹配
+  for (const binding of channelBindings) {
+    const match = binding.match || {};
+    if (match.peer?.kind === peerKind && match.peer?.id === '*') {
+      if (match.accountId && match.accountId !== accountId) continue;
+      log?.info?.(`[DingTalk][Bindings] 通配匹配 peer.kind=${peerKind}, peer.id=*: agentId=${binding.agentId}`);
+      return binding.agentId || defaultAgentId;
+    }
+  }
+
+  // 优先级3: 仅 peer.kind 匹配（无 peer.id）
+  for (const binding of channelBindings) {
+    const match = binding.match || {};
+    if (match.peer?.kind === peerKind && !match.peer?.id) {
+      if (match.accountId && match.accountId !== accountId) continue;
+      log?.info?.(`[DingTalk][Bindings] 匹配 peer.kind=${peerKind}: agentId=${binding.agentId}`);
+      return binding.agentId || defaultAgentId;
+    }
+  }
+
+  // 优先级4: accountId 匹配（无 peer 配置）
+  for (const binding of channelBindings) {
+    const match = binding.match || {};
+    if (!match.peer && match.accountId === accountId) {
+      log?.info?.(`[DingTalk][Bindings] 匹配 accountId=${accountId}: agentId=${binding.agentId}`);
+      return binding.agentId || defaultAgentId;
+    }
+  }
+
+  // 优先级5: 仅 channel 匹配（无 peer 和 accountId）
+  for (const binding of channelBindings) {
+    const match = binding.match || {};
+    if (!match.peer && !match.accountId) {
+      log?.info?.(`[DingTalk][Bindings] 匹配 channel=dingtalk-connector: agentId=${binding.agentId}`);
+      return binding.agentId || defaultAgentId;
+    }
+  }
+
+  log?.info?.(`[DingTalk][Bindings] 无匹配，使用默认 agentId=${defaultAgentId}`);
+  return defaultAgentId;
+}
+
 interface GatewayOptions {
   userContent: string;
   systemPrompts: string[];
@@ -1234,11 +1364,15 @@ interface GatewayOptions {
   memoryUser?: string;
   /** 本地图片文件路径列表，用于 OpenClaw AgentMediaPayload */
   imageLocalPaths?: string[];
+  /** 会话类型：'direct'（单聊）或 'group'（群聊），用于 bindings 匹配 */
+  peerKind?: 'direct' | 'group';
+  /** 发送者 ID，用于 bindings 匹配 */
+  peerId?: string;
   log?: any;
 }
 
 async function* streamFromGateway(options: GatewayOptions, accountId: string): AsyncGenerator<string, void, unknown> {
-  const { userContent, systemPrompts, sessionContext, gatewayAuth, memoryUser, imageLocalPaths, log } = options;
+  const { userContent, systemPrompts, sessionKey, gatewayAuth, memoryUser, imageLocalPaths, peerKind, peerId, log } = options;
   const rt = getRuntime();
   const gatewayUrl = `http://127.0.0.1:${rt.gateway?.port || 18789}/v1/chat/completions`;
 
@@ -1260,9 +1394,11 @@ async function* streamFromGateway(options: GatewayOptions, accountId: string): A
   if (gatewayAuth) {
     headers['Authorization'] = `Bearer ${gatewayAuth}`;
   }
-  // 使用 HTTP Header 传递 accountId 用于 agent 路由
-  // DEFAULT_ACCOUNT_ID 映射到 'main' agent
-  const agentId = accountId === DEFAULT_ACCOUNT_ID ? 'main' : accountId;
+  // 使用 bindings 配置解析 agentId，支持基于 peer.kind（单聊/群聊）的路由
+  // 如果没有提供 peerKind/peerId，则回退到原有逻辑
+  const agentId = (peerKind && peerId)
+    ? resolveAgentIdByBindings(accountId, peerKind, peerId, log)
+    : (accountId === DEFAULT_ACCOUNT_ID ? 'main' : accountId);
   headers['X-OpenClaw-Agent-Id'] = agentId;
   if (memoryUser) {
     // 使用 Base64 编码处理可能包含中文字符的 memoryUser
@@ -1270,8 +1406,7 @@ async function* streamFromGateway(options: GatewayOptions, accountId: string): A
     headers['X-OpenClaw-Memory-User'] = Buffer.from(memoryUser, 'utf-8').toString('base64');
   }
 
-  const sessionContextJson = JSON.stringify(sessionContext);
-  log?.info?.(`[DingTalk][Gateway] POST ${gatewayUrl}, sessionContext=${sessionContextJson}, accountId=${accountId}, messages=${messages.length}`);
+  log?.info?.(`[DingTalk][Gateway] POST ${gatewayUrl}, session=${sessionKey}, accountId=${accountId}, agentId=${agentId}, peerKind=${peerKind}, messages=${messages.length}`);
 
   const response = await fetch(gatewayUrl, {
     method: 'POST',
@@ -1280,7 +1415,7 @@ async function* streamFromGateway(options: GatewayOptions, accountId: string): A
       model: 'main',
       messages,
       stream: true,
-      user: sessionContextJson,  // OpenClaw 标准会话上下文 JSON，用于 session.dmScope 机制
+      user: sessionKey,  // 用于 session 持久化
     }),
   });
 
@@ -2558,15 +2693,21 @@ async function handleDingTalkMessage(params: {
       log?.warn?.(`[DingTalk][Async] 回执发送失败: ${ackErr?.message || ackErr}`);
     }
 
+    // 计算 peerKind 和 peerId 用于 bindings 匹配
+    const peerKind: 'direct' | 'group' = isDirect ? 'direct' : 'group';
+    const peerId = senderId;
+
     let fullResponse = '';
     try {
       for await (const chunk of streamFromGateway({
         userContent,
         systemPrompts,
-        sessionContext,
+        sessionKey,
         gatewayAuth,
         memoryUser,
         imageLocalPaths: imageLocalPaths.length > 0 ? imageLocalPaths : undefined,
+        peerKind,
+        peerId,
         log,
       }, accountId)) {
         fullResponse += chunk;
@@ -2616,6 +2757,10 @@ async function handleDingTalkMessage(params: {
     return;
   }
 
+  // 计算 peerKind 和 peerId 用于 bindings 匹配（在 asyncMode 外部定义，供所有分支使用）
+  const peerKind: 'direct' | 'group' = isDirect ? 'direct' : 'group';
+  const peerId = senderId;
+
   // 尝试创建 AI Card
   const card = await createAICard(dingtalkConfig, data, log);
 
@@ -2633,10 +2778,12 @@ async function handleDingTalkMessage(params: {
       for await (const chunk of streamFromGateway({
         userContent,
         systemPrompts,
-        sessionContext,
+        sessionKey,
         gatewayAuth,
         memoryUser,
         imageLocalPaths: imageLocalPaths.length > 0 ? imageLocalPaths : undefined,
+        peerKind,
+        peerId,
         log,
       }, accountId)) {
         accumulated += chunk;
@@ -2714,10 +2861,12 @@ async function handleDingTalkMessage(params: {
       for await (const chunk of streamFromGateway({
         userContent,
         systemPrompts,
-        sessionContext,
+        sessionKey,
         gatewayAuth,
         memoryUser,
         imageLocalPaths: imageLocalPaths.length > 0 ? imageLocalPaths : undefined,
+        peerKind,
+        peerId,
         log,
       }, accountId)) {
         fullResponse += chunk;
@@ -3336,7 +3485,7 @@ const dingtalkPlugin = {
       rt.channel.activity.record('dingtalk-connector', account.accountId, 'start');
 
       let stopped = false;
-      
+
       // 统一的停止逻辑
       const doStop = (reason: string) => {
         if (stopped) return;
