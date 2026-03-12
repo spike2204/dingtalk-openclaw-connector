@@ -37,35 +37,59 @@ interface UserSession {
 /** 用户会话缓存 Map<senderId, UserSession> */
 const userSessions = new Map<string, UserSession>();
 
-/** 消息去重缓存 Map<messageId, timestamp> - 防止同一消息被重复处理 */
-const processedMessages = new Map<string, number>();
+/**
+ * 消息去重缓存 - 按机器人账号维度隔离
+ * Map<accountId, Map<messageId, timestamp>>
+ * 
+ * 修复问题：当群里同时@多个机器人时，每个机器人应该独立维护消息去重缓存
+ * 避免因为使用全局 messageId 导致后续机器人被去重机制拦截
+ */
+const processedMessages = new Map<string, Map<string, number>>();
 
 /** 消息去重缓存过期时间（5分钟） */
 const MESSAGE_DEDUP_TTL = 5 * 60 * 1000;
 
-/** 清理过期的消息去重缓存 */
-function cleanupProcessedMessages(): void {
+/** 清理指定账号的过期消息去重缓存 */
+function cleanupProcessedMessages(accountId: string): void {
+  const accountMessages = processedMessages.get(accountId);
+  if (!accountMessages) return;
+
   const now = Date.now();
-  for (const [msgId, timestamp] of processedMessages.entries()) {
+  for (const [msgId, timestamp] of accountMessages.entries()) {
     if (now - timestamp > MESSAGE_DEDUP_TTL) {
-      processedMessages.delete(msgId);
+      accountMessages.delete(msgId);
     }
+  }
+
+  // 如果该账号没有消息了，删除账号级别的缓存
+  if (accountMessages.size === 0) {
+    processedMessages.delete(accountId);
   }
 }
 
 /** 检查消息是否已处理过（去重） */
-function isMessageProcessed(messageId: string): boolean {
+function isMessageProcessed(accountId: string, messageId: string): boolean {
   if (!messageId) return false;
-  return processedMessages.has(messageId);
+  const accountMessages = processedMessages.get(accountId);
+  return accountMessages?.has(messageId) || false;
 }
 
 /** 标记消息为已处理 */
-function markMessageProcessed(messageId: string): void {
+function markMessageProcessed(accountId: string, messageId: string): void {
   if (!messageId) return;
-  processedMessages.set(messageId, Date.now());
+  
+  // 获取或创建该账号的消息缓存
+  let accountMessages = processedMessages.get(accountId);
+  if (!accountMessages) {
+    accountMessages = new Map<string, number>();
+    processedMessages.set(accountId, accountMessages);
+  }
+  
+  accountMessages.set(messageId, Date.now());
+  
   // 定期清理（每处理100条消息清理一次）
-  if (processedMessages.size >= 100) {
-    cleanupProcessedMessages();
+  if (accountMessages.size >= 100) {
+    cleanupProcessedMessages(accountId);
   }
 }
 
@@ -126,7 +150,7 @@ function buildSessionContext(params: {
       channel: 'dingtalk-connector',
       accountId,
       chatType: isDirect ? 'direct' : 'group',
-      peerId: senderId, // 只用 senderId，不区分会话
+      peerId: `${accountId}:${senderId}`, // 添加 accountId 前缀，确保不同机器人账号独立会话
       senderName,
     };
   }
@@ -138,7 +162,7 @@ function buildSessionContext(params: {
       channel: 'dingtalk-connector',
       accountId,
       chatType: 'direct',
-      peerId: senderId,
+      peerId: `${accountId}:${senderId}`, // 添加 accountId 前缀，确保不同机器人账号独立会话
       senderName,
     };
   }
@@ -150,7 +174,7 @@ function buildSessionContext(params: {
       channel: 'dingtalk-connector',
       accountId,
       chatType: 'group',
-      peerId: `${conversationId}:${senderId}`,
+      peerId: `${accountId}:${conversationId}:${senderId}`, // 添加 accountId 前缀
       conversationId,
       senderName,
       groupSubject,
@@ -3282,7 +3306,13 @@ const dingtalkPlugin = {
       const config = getConfig(cfg);
       const id = accountId || DEFAULT_ACCOUNT_ID;
       if (config.accounts?.[id]) {
-        return { accountId: id, config: config.accounts[id], enabled: config.accounts[id].enabled !== false };
+        const accountConfig = config.accounts[id];
+        // 继承顶层配置：账号级别配置 > 顶层配置 > 默认值
+        const mergedConfig = {
+          ...config,  // 顶层配置作为基础
+          ...accountConfig,  // 账号配置覆盖顶层配置
+        };
+        return { accountId: id, config: mergedConfig, enabled: accountConfig.enabled !== false };
       }
       // 没有 accounts 配置或找不到指定账号时，使用顶层配置
       return { accountId: DEFAULT_ACCOUNT_ID, config, enabled: config.enabled !== false };
@@ -3456,15 +3486,15 @@ const dingtalkPlugin = {
           ctx.log?.info?.(`[DingTalk] 已立即确认回调: messageId=${messageId}`);
         }
 
-        // 【消息去重】检查是否已处理过该消息
-        if (messageId && isMessageProcessed(messageId)) {
-          ctx.log?.warn?.(`[DingTalk] 检测到重复消息，跳过处理: messageId=${messageId}`);
+        // 【消息去重】检查是否已处理过该消息（按账号维度隔离）
+        if (messageId && isMessageProcessed(account.accountId, messageId)) {
+          ctx.log?.warn?.(`[DingTalk][${account.accountId}] 检测到重复消息，跳过处理: messageId=${messageId}`);
           return;
         }
 
-        // 标记消息为已处理
+        // 标记消息为已处理（按账号维度隔离）
         if (messageId) {
-          markMessageProcessed(messageId);
+          markMessageProcessed(account.accountId, messageId);
         }
 
         // 异步处理消息（不阻塞回调确认）
