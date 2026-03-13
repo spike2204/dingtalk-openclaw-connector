@@ -41,35 +41,15 @@ openclaw gateway restart
 安装完成后，运行以下命令验证是否安装成功且为内测版本：
 
 ```bash
-# 1. 检查插件状态
-openclaw plugins list
+openclaw plugins list && openclaw plugins info dingtalk-connector
 ```
 
 应该看到：
-```
-✓ dingtalk-connector (enabled)
-```
+- 插件状态：`✓ dingtalk-connector (enabled)`
+- 版本号：`v0.8.0-beta` 或更高（包含 `beta` 标识）
 
 ```bash
-# 2. 验证是否为内测版本（检查版本号）
-openclaw plugins info dingtalk-connector
-```
-
-应该看到版本号为 `v0.8.0-beta` 或更高，包含 `beta` 标识
-
-```bash
-# 3. 检查配置是否包含新功能
-openclaw config show channels.dingtalk-connector
-```
-
-应该看到以下新配置项：
-- `defaultAccount` - 默认账号配置
-- `accounts` - 多账号配置
-- `dmPolicy` - 单聊策略配置
-- `groupPolicy` - 群聊策略配置
-
-```bash
-# 4. 测试连接
+# 测试连接
 # 在钉钉中向机器人发送任意消息，查看是否正常响应
 ```
 
