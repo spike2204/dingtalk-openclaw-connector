@@ -99,18 +99,16 @@ openclaw plugins install -l .
       "asyncMode": false,                 // 可选：异步模式，立即回执用户消息，后台处理并推送结果（默认：false）
       "ackText": "🫡 任务已接收"      // 可选：异步模式下的回执消息文本（默认：'🫡 任务已接收，处理中...'）
     }
-  },
-  "gateway": { // gateway通常是已有的节点，配置时注意把http部分追加到已有节点下
-    "http": {
-      "endpoints": {
-        "chatCompletions": {
-          "enabled": true
-        }
-      }
-    }
   }
 }
 ```
+
+执行配置命令
+
+```bash
+openclaw config set gateway.http.endpoints.chatCompletions.enabled true
+```
+
 
 或者在 OpenClaw Dashboard 页面配置：
 
@@ -131,21 +129,20 @@ openclaw plugins list  # 确认 dingtalk-connector 已加载
 ## 创建钉钉机器人
 
 1. 打开 [钉钉开放平台](https://open.dingtalk.com/)
-2. 进入 **应用开发** → **企业内部开发** → 创建应用
-3. 添加 **机器人** 能力，消息接收模式选择 **Stream 模式**
-4. 开通权限：
-   - `Card.Streaming.Write` - AI Card 流式响应
-   - `Card.Instance.Write` - AI Card 实例写入
-   - `qyapi_robot_sendmsg` - 主动发送消息
-   - 如需使用文档 API 功能，还需开通文档相关权限
-5. **发布应用**，记录 **AppKey** 和 **AppSecret**
+2. 进入 **应用开发** → **企业内部开发** → 创建openclaw机器人
+   <img width="2529" height="961" alt="image" src="https://github.com/user-attachments/assets/4163dc50-808c-43c2-84bd-a1e8dde42e05" />
+3. 创建好机器人后，保存一下生成的clientId和clientSecret, 后续配置参数需要
+   <img width="687" height="540" alt="image" src="https://github.com/user-attachments/assets/c036ea46-9750-4814-8c24-3e4b54bd2788" />
+
+   或者在机器人详情中 也可以拿到
+   <img width="1527" height="377" alt="image" src="https://github.com/user-attachments/assets/3cf2a661-ed81-441d-9cda-024a6a5377cc" />
 
 ## 配置参考
 
 | 配置项 | 环境变量 | 说明 |
 |--------|----------|------|
-| `clientId` | `DINGTALK_CLIENT_ID` | 钉钉 AppKey |
-| `clientSecret` | `DINGTALK_CLIENT_SECRET` | 钉钉 AppSecret |
+| `clientId` | `DINGTALK_CLIENT_ID` | 上一步创建openclaw机器人给到的 clinetId |
+| `clientSecret` | `DINGTALK_CLIENT_SECRET` | 上一步创建openclaw机器人给到的 clientSecret |
 | `gatewayToken` | `OPENCLAW_GATEWAY_TOKEN` | Gateway 认证 token（可选） |
 | `gatewayPassword` | — | Gateway 认证 password（可选，与 token 二选一） |
 | `sessionTimeout` | — | ⚠️ 已废弃，请使用 Gateway 的 [`session.reset.idleMinutes`](https://docs.openclaw.ai/gateway/configuration) 配置 |
