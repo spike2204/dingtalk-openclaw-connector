@@ -126,10 +126,44 @@ function extractMessageContent(data: any): ExtractedMessage {
 
       return { text: '[图片]', messageType: 'picture', imageUrls, downloadCodes, fileNames: [], atDingtalkIds: [], atMobiles: [] };
     }
-    case 'audio':
-      return { text: data.content?.recognition || '[语音消息]', messageType: 'audio', imageUrls: [], downloadCodes: [], fileNames: [], atDingtalkIds: [], atMobiles: [] };
-    case 'video':
-      return { text: '[视频]', messageType: 'video', imageUrls: [], downloadCodes: [], fileNames: [], atDingtalkIds: [], atMobiles: [] };
+    case 'audio': {
+      const audioDownloadCode = data.content?.downloadCode || '';
+      const audioFileName = data.content?.fileName || 'audio';
+      const downloadCodes: string[] = [];
+      const fileNames: string[] = [];
+      if (audioDownloadCode) {
+        downloadCodes.push(audioDownloadCode);
+        fileNames.push(audioFileName);
+      }
+      return { 
+        text: data.content?.recognition || '[语音消息]', 
+        messageType: 'audio', 
+        imageUrls: [], 
+        downloadCodes, 
+        fileNames, 
+        atDingtalkIds: [], 
+        atMobiles: [] 
+      };
+    }
+    case 'video': {
+      const videoDownloadCode = data.content?.downloadCode || '';
+      const videoFileName = data.content?.fileName || 'video.mp4';
+      const downloadCodes: string[] = [];
+      const fileNames: string[] = [];
+      if (videoDownloadCode) {
+        downloadCodes.push(videoDownloadCode);
+        fileNames.push(videoFileName);
+      }
+      return { 
+        text: '[视频]', 
+        messageType: 'video', 
+        imageUrls: [], 
+        downloadCodes, 
+        fileNames, 
+        atDingtalkIds: [], 
+        atMobiles: [] 
+      };
+    }
     case 'file': {
       const fileName = data.content?.fileName || '文件';
       const downloadCode = data.content?.downloadCode || '';
@@ -309,31 +343,67 @@ export async function handleDingTalkMessage(params: HandleMessageParams): Promis
 
   // ===== 图片下载到本地文件 =====
   const imageLocalPaths: string[] = [];
-  for (const url of content.imageUrls) {
-    if (url.startsWith('downloadCode:')) {
-      const code = url.slice('downloadCode:'.length);
-      const localPath = await downloadMediaByCode(code, config, log);
-      if (localPath) imageLocalPaths.push(localPath);
-    } else {
-      const localPath = await downloadImageToFile(url, log);
-      if (localPath) imageLocalPaths.push(localPath);
+  
+  log?.info?.(`[DingTalk][${accountId}] 开始处理图片: imageUrls=${content.imageUrls.length}, downloadCodes=${content.downloadCodes.length}`);
+  
+  // 处理 imageUrls（来自富文本消息）
+  for (let i = 0; i < content.imageUrls.length; i++) {
+    const url = content.imageUrls[i];
+    try {
+      log?.info?.(`[DingTalk][${accountId}] 处理图片 ${i + 1}/${content.imageUrls.length}: ${url.slice(0, 50)}...`);
+      
+      if (url.startsWith('downloadCode:')) {
+        const code = url.slice('downloadCode:'.length);
+        const localPath = await downloadMediaByCode(code, config, log);
+        if (localPath) {
+          imageLocalPaths.push(localPath);
+          log?.info?.(`[DingTalk][${accountId}] 图片下载成功 ${i + 1}/${content.imageUrls.length}`);
+        } else {
+          log?.warn?.(`[DingTalk][${accountId}] 图片下载失败 ${i + 1}/${content.imageUrls.length}`);
+        }
+      } else {
+        const localPath = await downloadImageToFile(url, log);
+        if (localPath) {
+          imageLocalPaths.push(localPath);
+          log?.info?.(`[DingTalk][${accountId}] 图片下载成功 ${i + 1}/${content.imageUrls.length}`);
+        } else {
+          log?.warn?.(`[DingTalk][${accountId}] 图片下载失败 ${i + 1}/${content.imageUrls.length}`);
+        }
+      }
+    } catch (err: any) {
+      log?.error?.(`[DingTalk][${accountId}] 图片下载异常 ${i + 1}/${content.imageUrls.length}: ${err.message}`);
     }
   }
 
+  // 处理 downloadCodes（来自 picture 消息，fileNames 为空的是图片）
   for (let i = 0; i < content.downloadCodes.length; i++) {
     const code = content.downloadCodes[i];
     const fileName = content.fileNames[i];
     if (!fileName) {
-      const localPath = await downloadMediaByCode(code, config, log);
-      if (localPath) imageLocalPaths.push(localPath);
+      try {
+        log?.info?.(`[DingTalk][${accountId}] 处理 downloadCode 图片 ${i + 1}/${content.downloadCodes.length}`);
+        const localPath = await downloadMediaByCode(code, config, log);
+        if (localPath) {
+          imageLocalPaths.push(localPath);
+          log?.info?.(`[DingTalk][${accountId}] downloadCode 图片下载成功 ${i + 1}/${content.downloadCodes.length}`);
+        } else {
+          log?.warn?.(`[DingTalk][${accountId}] downloadCode 图片下载失败 ${i + 1}/${content.downloadCodes.length}`);
+        }
+      } catch (err: any) {
+        log?.error?.(`[DingTalk][${accountId}] downloadCode 图片下载异常 ${i + 1}/${content.downloadCodes.length}: ${err.message}`);
+      }
     }
   }
+  
+  log?.info?.(`[DingTalk][${accountId}] 图片下载完成: 成功=${imageLocalPaths.length}, 总数=${content.imageUrls.length + content.downloadCodes.filter((_, i) => !content.fileNames[i]).length}`);
 
 
 
   // ===== 文件附件下载与内容提取 =====
   const TEXT_FILE_EXTENSIONS = new Set(['.txt', '.md', '.json', '.xml', '.yaml', '.yml', '.csv', '.log', '.ts', '.js', '.py', '.java', '.go', '.rs', '.c', '.cpp', '.h', '.hpp', '.css', '.html', '.sql', '.sh', '.bat']);
   const OFFICE_FILE_EXTENSIONS = new Set(['.docx', '.pdf']);
+  const VIDEO_EXTENSIONS = new Set(['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.webm']);
+  const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav', '.aac', '.ogg', '.m4a', '.flac', '.wma']);
 
   const fileContentParts: string[] = [];
   for (let i = 0; i < content.downloadCodes.length; i++) {
@@ -346,6 +416,21 @@ export async function handleDingTalkMessage(params: HandleMessageParams): Promis
 
     if (!localPath) {
       fileContentParts.push(`[文件下载失败: ${fileName}]`);
+      continue;
+    }
+
+    // 视频文件：仅下载保存，不提取内容
+    if (VIDEO_EXTENSIONS.has(ext) || content.messageType === 'video') {
+      fileContentParts.push(`[视频已保存: ${localPath}]`);
+      log?.info?.(`[DingTalk][Video] 视频文件已下载: ${fileName} -> ${localPath}`);
+      continue;
+    }
+
+    // 音频文件：仅下载保存，不提取内容
+    if (AUDIO_EXTENSIONS.has(ext) || content.messageType === 'audio') {
+      const recognitionText = content.text && content.text !== '[语音消息]' ? `\n语音识别: ${content.text}` : '';
+      fileContentParts.push(`[音频已保存: ${localPath}${recognitionText}]`);
+      log?.info?.(`[DingTalk][Audio] 音频文件已下载: ${fileName} -> ${localPath}`);
       continue;
     }
 
