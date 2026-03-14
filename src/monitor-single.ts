@@ -3,11 +3,10 @@
  * 独立于 monitor.account.ts，避免循环依赖
  */
 
-
-
 import type { ClawdbotConfig, RuntimeEnv } from "openclaw/plugin-sdk";
 import type { ResolvedDingtalkAccount } from "./types";
 import { TOPIC_ROBOT, GATEWAY_URL } from 'dingtalk-stream';
+import { acquireProcessLock, releaseProcessLock, registerLockCleanup } from './process-lock';
 
 // ============ 消息去重（内置，避免循环依赖） ============
 
@@ -82,8 +81,25 @@ export async function monitorSingleAccount(opts: MonitorDingtalkAccountOpts): Pr
   const clawdbotConfig = cfg;
   const log = runtime?.log ?? console.log;
 
+  // ===== 进程锁检查：防止多个进程同时监控同一个账号 =====
+  if (!acquireProcessLock(accountId)) {
+    throw new Error(
+      `[DingTalk][${accountId}] 无法获取进程锁！\n` +
+      `该账号已被另一个 OpenClaw 进程监控。\n` +
+      `请检查是否有多个 OpenClaw 进程在运行：\n` +
+      `  ps aux | grep openclaw\n` +
+      `如需停止所有进程：\n` +
+      `  pkill -9 -f openclaw`
+    );
+  }
+
+  // 注册进程退出时自动释放锁
+  registerLockCleanup(accountId);
+  log(`[DingTalk][${accountId}] ✅ 成功获取进程锁，开始监控...`);
+
   // 验证凭据是否存在
   if (!account.clientId || !account.clientSecret) {
+    releaseProcessLock(accountId); // 释放锁
     throw new Error(
       `[DingTalk][${accountId}] Missing credentials: ` +
       `clientId=${!!account.clientId ? 'present' : 'MISSING'}, ` +
@@ -135,14 +151,32 @@ export async function monitorSingleAccount(opts: MonitorDingtalkAccountOpts): Pr
     if (abortSignal) {
       const onAbort = () => {
         log(`[DingTalk][${accountId}] Abort signal received, stopping...`);
+        releaseProcessLock(accountId); // 释放锁
         client.disconnect();
         resolve();
       };
       abortSignal.addEventListener("abort", onAbort, { once: true });
     }
 
+    // 消息接收统计（用于检测消息丢失）
+    let receivedCount = 0;
+    let processedCount = 0;
+    let lastMessageTime = Date.now();
+
+    // 定期输出统计信息
+    const statsInterval = setInterval(() => {
+      const now = Date.now();
+      const timeSinceLastMessage = Math.round((now - lastMessageTime) / 1000);
+      log?.info?.(
+        `[DingTalk][${accountId}] 统计: 收到=${receivedCount}, 处理=${processedCount}, ` +
+        `丢失=${receivedCount - processedCount}, 距上次消息=${timeSinceLastMessage}s`
+      );
+    }, 60000); // 每分钟输出一次
+
     // Register message handler
     client.registerCallbackListener(TOPIC_ROBOT, async (res: any) => {
+      receivedCount++;
+      lastMessageTime = Date.now();
       const messageId = res.headers?.messageId;
       const timestamp = new Date().toISOString();
       
@@ -216,11 +250,13 @@ export async function monitorSingleAccount(opts: MonitorDingtalkAccountOpts): Pr
           cfg: clawdbotConfig,
         });
         
-        console.log(`[DingTalk][${accountId}] ✅ 消息处理完成`);
+        processedCount++;
+        console.log(`[DingTalk][${accountId}] ✅ 消息处理完成 (${processedCount}/${receivedCount})`);
         console.log(`========== 消息处理结束（成功） ==========\n`);
         
       } catch (error: any) {
-        console.error(`\n[DingTalk][${accountId}] ❌ 处理消息异常:`);
+        processedCount++;
+        console.error(`\n[DingTalk][${accountId}] ❌ 处理消息异常 (${processedCount}/${receivedCount}):`);
         console.error(`错误类型: ${error.name || 'Error'}`);
         console.error(`错误信息: ${error.message}`);
         console.error(`错误堆栈:\n${error.stack}`);
@@ -228,11 +264,20 @@ export async function monitorSingleAccount(opts: MonitorDingtalkAccountOpts): Pr
       }
     });
 
+    // 清理定时器
+    const cleanup = () => {
+      clearInterval(statsInterval);
+      releaseProcessLock(accountId);
+    };
+
     // Connect to DingTalk Stream
     try {
       await client.connect();
       log(`[DingTalk][${accountId}] Connected to DingTalk Stream successfully`);
+      log(`[DingTalk][${accountId}] PID: ${process.pid}`);
     } catch (error: any) {
+      cleanup(); // 连接失败时清理资源
+      
       // 处理 401 认证错误
       if (error.response?.status === 401 || error.message?.includes('401')) {
         throw new Error(
@@ -258,6 +303,7 @@ export async function monitorSingleAccount(opts: MonitorDingtalkAccountOpts): Pr
     client.on('close', () => {
       const connectionDuration = Date.now() - connectionStartTime;
       log?.info?.(`[DingTalk][${accountId}] Connection closed after ${Math.round(connectionDuration / 1000)}s, will auto-reconnect...`);
+      log?.warn?.(`[DingTalk][${accountId}] ⚠️ 如果长时间无法重连，可能存在长尾连接问题，建议重启进程`);
     });
 
     client.on('error', (err: Error) => {
@@ -269,11 +315,27 @@ export async function monitorSingleAccount(opts: MonitorDingtalkAccountOpts): Pr
       reconnectCount++;
       connectionStartTime = Date.now();
       log?.info?.(`[DingTalk][${accountId}] Reconnecting... (attempt ${reconnectCount})`);
+      
+      // 如果重连次数过多，警告可能存在问题
+      if (reconnectCount > 5) {
+        log?.warn?.(
+          `[DingTalk][${accountId}] ⚠️ 重连次数过多 (${reconnectCount})，可能存在网络问题或长尾连接\n` +
+          `建议检查：\n` +
+          `1. 网络连接是否稳定\n` +
+          `2. 是否有其他进程占用连接\n` +
+          `3. 考虑重启进程`
+        );
+      }
     });
 
     client.on('reconnected', () => {
       log?.info?.(`[DingTalk][${accountId}] Reconnected successfully after ${reconnectCount} attempts`);
     });
+
+    // 进程退出时清理
+    process.on('exit', cleanup);
+    process.on('SIGINT', cleanup);
+    process.on('SIGTERM', cleanup);
   });
 }
 
