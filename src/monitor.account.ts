@@ -240,7 +240,7 @@ async function downloadMediaByCode(
   }
 }
 
-async function downloadFileByCode(
+async function getFileDownloadUrl(
   downloadCode: string,
   fileName: string,
   config: DingtalkConfig,
@@ -248,7 +248,7 @@ async function downloadFileByCode(
 ): Promise<string | null> {
   try {
     const token = await getAccessToken(config);
-    log?.info?.(`[DingTalk][File] 通过 downloadCode 下载文件: ${fileName}`);
+    log?.info?.(`[DingTalk][File] 获取文件下载链接: ${fileName}`);
 
     const resp = await axios.post(
       `${DINGTALK_API}/v1.0/robot/messageFiles/download`,
@@ -265,23 +265,10 @@ async function downloadFileByCode(
       return null;
     }
 
-    const fileResp = await axios.get(downloadUrl, {
-      responseType: 'arraybuffer',
-      timeout: 60_000,
-    });
-
-    const buffer = Buffer.from(fileResp.data);
-    const mediaDir = path.join(os.homedir(), '.openclaw', 'workspace', 'media', 'inbound');
-    fs.mkdirSync(mediaDir, { recursive: true });
-
-    const safeFileName = fileName.replace(/[/\\:*?"<>|]/g, '_');
-    const localPath = path.join(mediaDir, `${Date.now()}-${safeFileName}`);
-    fs.writeFileSync(localPath, buffer);
-
-    log?.info?.(`[DingTalk][File] 文件下载成功: size=${buffer.length} bytes, path=${localPath}`);
-    return localPath;
+    log?.info?.(`[DingTalk][File] 获取下载链接成功: ${fileName}`);
+    return downloadUrl;
   } catch (err: any) {
-    log?.error?.(`[DingTalk][File] 文件下载失败: ${err.message}`);
+    log?.error?.(`[DingTalk][File] 获取下载链接失败: ${err.message}`);
     return null;
   }
 }
@@ -400,97 +387,51 @@ export async function handleDingTalkMessage(params: HandleMessageParams): Promis
 
 
 
-  // ===== 文件附件下载与内容提取 =====
-  const TEXT_FILE_EXTENSIONS = new Set(['.txt', '.md', '.json', '.xml', '.yaml', '.yml', '.csv', '.log', '.ts', '.js', '.py', '.java', '.go', '.rs', '.c', '.cpp', '.h', '.hpp', '.css', '.html', '.sql', '.sh', '.bat']);
-  const OFFICE_FILE_EXTENSIONS = new Set(['.docx', '.pdf']);
-  const VIDEO_EXTENSIONS = new Set(['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.webm']);
-  const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav', '.aac', '.ogg', '.m4a', '.flac', '.wma']);
-
+  // ===== 文件附件处理：展示下载链接 =====
   const fileContentParts: string[] = [];
   for (let i = 0; i < content.downloadCodes.length; i++) {
     const code = content.downloadCodes[i];
     const fileName = content.fileNames[i];
     if (!fileName) continue;
 
+    const downloadUrl = await getFileDownloadUrl(code, fileName, config, log);
+
+    if (!downloadUrl) {
+      fileContentParts.push(`⚠️ 文件获取失败: ${fileName}`);
+      continue;
+    }
+
+    // 所有文件统一展示下载链接
     const ext = path.extname(fileName).toLowerCase();
-    const localPath = await downloadFileByCode(code, fileName, config, log);
+    let fileType = '文件';
 
-    if (!localPath) {
-      fileContentParts.push(`⚠️ 文件下载失败: ${fileName}`);
-      continue;
-    }
-
-    // 构建 file:// 链接
-    const fileUri = `file://${localPath}`;
-
-    // 视频文件：下载后展示本地链接
-    if (VIDEO_EXTENSIONS.has(ext) || content.messageType === 'video') {
-      fileContentParts.push(`🎬 **视频**: ${fileName}\n🔗 [点击查看](${fileUri})`);
-      log?.info?.(`[DingTalk][Video] 视频文件已下载: ${fileName} -> ${localPath}`);
-      continue;
-    }
-
-    // 音频文件：下载后展示本地链接
-    if (AUDIO_EXTENSIONS.has(ext) || content.messageType === 'audio') {
-      const recognitionText = content.text && content.text !== '[语音消息]' ? `\n📝 语音识别: ${content.text}` : '';
-      fileContentParts.push(`🎤 **音频**: ${fileName}${recognitionText}\n🔗 [点击查看](${fileUri})`);
-      log?.info?.(`[DingTalk][Audio] 音频文件已下载: ${fileName} -> ${localPath}`);
-      continue;
-    }
-
-    // 文本文件：提取内容并提供本地链接
-    if (TEXT_FILE_EXTENSIONS.has(ext)) {
-      try {
-        const fileContent = fs.readFileSync(localPath, 'utf-8');
-        const maxLen = 50_000;
-        const truncated = fileContent.length > maxLen ? fileContent.slice(0, maxLen) + '\n...(内容过长，已截断)' : fileContent;
-        fileContentParts.push(`📝 **文本文件**: ${fileName}\n🔗 [点击查看](${fileUri})\n\n\`\`\`\n${truncated}\n\`\`\``);
-      } catch (err: any) {
-        log?.error?.(`[DingTalk][File] 读取文本文件失败: ${err.message}`);
-        fileContentParts.push(`📝 **文本文件**: ${fileName}\n🔗 [点击查看](${fileUri})\n⚠️ 读取内容失败`);
+    if (['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.webm'].includes(ext)) {
+      fileType = '视频';
+    } else if (['.mp3', '.wav', '.aac', '.ogg', '.m4a', '.flac', '.wma'].includes(ext)) {
+      fileType = '音频';
+      // 如果有语音识别文本，一并显示
+      if (content.text && content.text !== '[语音消息]') {
+        fileContentParts.push(`🎤 **${fileType}**: ${fileName}\n📝 语音识别: ${content.text}\n🔗 [点击下载](${downloadUrl})`);
+        continue;
       }
-    } else if (ext === '.docx') {
-      try {
-        const mammoth = await import('mammoth');
-        const result = await mammoth.default.extractRawText({ path: localPath });
-        const fileContent = result.value;
-        const maxLen = 50_000;
-        const truncated = fileContent.length > maxLen ? fileContent.slice(0, maxLen) + '\n...(内容过长，已截断)' : fileContent;
-        fileContentParts.push(`📄 **Word 文档**: ${fileName}\n🔗 [点击查看](${fileUri})\n\n\`\`\`\n${truncated}\n\`\`\``);
-      } catch (err: any) {
-        log?.error?.(`[DingTalk][File] Word 文档文本提取失败: ${err.message}`);
-        fileContentParts.push(`📄 **Word 文档**: ${fileName}\n🔗 [点击查看](${fileUri})\n⚠️ 提取文本失败`);
-      }
+    } else if (['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'].includes(ext)) {
+      fileType = '图片';
+    } else if (['.txt', '.md', '.json', '.xml', '.yaml', '.yml', '.csv', '.log'].includes(ext)) {
+      fileType = '文本文件';
+    } else if (['.docx', '.doc'].includes(ext)) {
+      fileType = 'Word 文档';
     } else if (ext === '.pdf') {
-      try {
-        const pdfParse = (await import('pdf-parse')).default;
-        const dataBuffer = fs.readFileSync(localPath);
-        const pdfData = await pdfParse(dataBuffer);
-        const fileContent = pdfData.text;
-        const maxLen = 50_000;
-        const truncated = fileContent.length > maxLen ? fileContent.slice(0, maxLen) + '\n...(内容过长，已截断)' : fileContent;
-        fileContentParts.push(`📕 **PDF 文档**: ${fileName}\n🔗 [点击查看](${fileUri})\n\n\`\`\`\n${truncated}\n\`\`\``);
-      } catch (err: any) {
-        log?.error?.(`[DingTalk][File] PDF 文档文本提取失败: ${err.message}`);
-        fileContentParts.push(`📕 **PDF 文档**: ${fileName}\n🔗 [点击查看](${fileUri})\n⚠️ 提取文本失败`);
-      }
-    } else {
-      // 其他文件类型：提供本地链接
-      let fileType = '文件';
-      // 安全检查：确保 ext 存在且为字符串
-      if (ext && typeof ext === 'string') {
-        if (['.xlsx', '.xls'].includes(ext)) {
-          fileType = 'Excel 表格';
-        } else if (['.pptx', '.ppt'].includes(ext)) {
-          fileType = 'PPT 演示文稿';
-        } else if (['.zip', '.rar', '.7z', '.tar', '.gz'].includes(ext)) {
-          fileType = '压缩包';
-        } else if (['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'].includes(ext)) {
-          fileType = '图片';
-        }
-      }
-      fileContentParts.push(`📎 **${fileType}**: ${fileName}\n🔗 [点击查看](${fileUri})`);
+      fileType = 'PDF 文档';
+    } else if (['.xlsx', '.xls'].includes(ext)) {
+      fileType = 'Excel 表格';
+    } else if (['.pptx', '.ppt'].includes(ext)) {
+      fileType = 'PPT 演示文稿';
+    } else if (['.zip', '.rar', '.7z', '.tar', '.gz'].includes(ext)) {
+      fileType = '压缩包';
     }
+
+    fileContentParts.push(`📎 **${fileType}**: ${fileName}\n🔗 [点击下载](${downloadUrl})`);
+    log?.info?.(`[DingTalk][File] 文件下载链接已生成: ${fileName}`);
   }
 
   if (fileContentParts.length > 0) {
@@ -609,7 +550,7 @@ export async function handleDingTalkMessage(params: HandleMessageParams): Promis
     // ✅ 计算正确的 To 字段
     const toField = isDirect ? senderId : data.conversationId;
     console.log(`[DingTalk][${accountId}] 构建 inbound context: isDirect=${isDirect}, senderId=${senderId}, conversationId=${data.conversationId}, To=${toField}`);
-    
+
     const ctxPayload = core.channel.reply.finalizeInboundContext({
       Body: body,
       BodyForAgent: finalContent,
@@ -674,7 +615,11 @@ export async function handleDingTalkMessage(params: HandleMessageParams): Promis
     } catch (dispatchErr: any) {
       console.error(`[DingTalk][${accountId}] withReplyDispatcher 抛出异常: ${dispatchErr?.message || dispatchErr}`);
       console.error(`[DingTalk][${accountId}] 异常堆栈: ${dispatchErr?.stack || 'no stack'}`);
-      throw dispatchErr;
+      log?.error?.(`[DingTalk][${accountId}] 消息处理异常，但不阻塞后续消息: ${dispatchErr?.message || dispatchErr}`);
+
+      // ⚠️ 不要直接 throw，避免阻塞后续消息处理
+      // 记录错误后继续执行，确保后续消息能正常处理
+      dispatchResult = { queuedFinal: false, counts: { final: 0, partial: 0, tool: 0 } };
     }
     
     const { queuedFinal, counts } = dispatchResult;
@@ -723,7 +668,7 @@ export async function handleDingTalkMessage(params: HandleMessageParams): Promis
             true,  // ✅ 使用主动 API 模式
             mediaTarget
           );
-          
+
           // ✅ 处理裸露的本地文件路径（绕过 OpenClaw SDK 的 bug）
           const { processRawMediaPaths } = await import('./media.js');
           finalText = await processRawMediaPaths(
@@ -778,9 +723,12 @@ export async function handleDingTalkMessage(params: HandleMessageParams): Promis
   }
 
   // ===== 撤回处理中表情 =====
-  recallEmotionReply(config, data, log).catch(err => {
-    log?.warn?.(`[DingTalk][Emotion] 撤回表情失败: ${err.message}`);
-  });
+  // 使用 await 确保表情撤销完成后再结束函数
+  try {
+    await recallEmotionReply(config, data, log);
+  } catch (err: any) {
+    log?.warn?.(`[DingTalk][Emotion] 撤回表情异常: ${err.message}`);
+  }
 }
 
 // handleDingTalkMessage 已在函数定义处直接导出
