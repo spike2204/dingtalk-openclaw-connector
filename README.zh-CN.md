@@ -27,16 +27,9 @@
 
 开始之前，请确保你已经：
 
-### 1. Node.js
+> 本插件作为 OpenClaw Gateway 插件使用，一般无需你单独安装或管理 Node.js 运行时。
 
-- **版本要求**：>= 22
-- **下载地址**：https://nodejs.org/
-- **验证安装**：
-  ```bash
-  node --version
-  ```
-
-### 2. OpenClaw Gateway
+### 1. OpenClaw Gateway
 
 - **官方网站**：https://openclaw.ai/
 - **安装说明**：按照官方指南安装 OpenClaw
@@ -46,7 +39,7 @@
   ```
   预期输出：`✓ Gateway is running on http://127.0.0.1:18789`
 
-### 3. 钉钉企业账号
+### 2. 钉钉企业账号
 
 - 你需要一个钉钉企业账号来创建企业内部应用
 - 官方网站：https://www.dingtalk.com/
@@ -56,6 +49,17 @@
 ## 快速开始
 
 > 💡 **目标**：5 分钟内让你的钉钉机器人运行起来
+
+### 操作系统支持
+
+本插件在以下系统上经过验证：
+
+- macOS / Linux：使用默认的 Shell 终端（zsh、bash 等）。
+- Windows：
+  - 推荐使用 **PowerShell** 或 **Windows Terminal**。
+  - OpenClaw 配置文件路径默认为：`C:\Users\<你的用户名>\.openclaw\openclaw.json`。
+
+下文中出现的 `~/.openclaw/openclaw.json`，在 Windows 上等价于以上路径。
 
 ### 步骤 1：安装插件
 
@@ -75,29 +79,7 @@ openclaw plugins list
 
 ---
 
-### 步骤 2：启用 Chat Completions 端点
-
-编辑 `~/.openclaw/openclaw.json`，确保存在以下配置：
-
-```json5
-{
-  "gateway": {
-    "http": {
-      "endpoints": {
-        "chatCompletions": {
-          "enabled": true
-        }
-      }
-    }
-  }
-}
-```
-
-> ⚠️ **重要**：如果没有这个配置，你可能会遇到 HTTP 405 错误。
-
----
-
-### 步骤 3：创建钉钉机器人
+### 步骤 2：创建钉钉机器人
 
 #### 3.1 创建应用
 
@@ -126,11 +108,13 @@ openclaw plugins list
 
 ---
 
-### 步骤 4：配置 OpenClaw
+### 步骤 3：配置 OpenClaw
 
 你有三种方式配置连接器：
 
 #### 方式 A：配置向导（推荐新手使用）
+
+> 你可以直接复制粘贴下面的命令，在终端中运行配置向导。
 
 ```bash
 openclaw channels add
@@ -139,11 +123,13 @@ openclaw channels add
 选择 **"DingTalk (钉钉)"**，然后按提示输入：
 - `clientId`（AppKey）
 - `clientSecret`（AppSecret）
-- 群聊策略设置
 
 #### 方式 B：编辑配置文件
 
-编辑 `~/.openclaw/openclaw.json`：
+编辑配置文件：
+
+- macOS / Linux：`~/.openclaw/openclaw.json`
+- Windows：`C:\Users\<你的用户名>\.openclaw\openclaw.json`
 
 ```json5
 {
@@ -151,9 +137,7 @@ openclaw channels add
     "dingtalk-connector": {
       "enabled": true,
       "clientId": "dingxxxxxxxxx",        // 你的 AppKey
-      "clientSecret": "your_app_secret",  // 你的 AppSecret
-      "dmPolicy": "open",                 // 私聊策略
-      "groupPolicy": "open"               // 群聊策略
+      "clientSecret": "your_app_secret"   // 你的 AppSecret
     }
   }
 }
@@ -170,7 +154,7 @@ export DINGTALK_CLIENT_SECRET="your_app_secret"
 
 ---
 
-### 步骤 5：重启并测试
+### 步骤 4：重启并测试
 
 ```bash
 # 重启 OpenClaw Gateway
@@ -219,8 +203,6 @@ openclaw logs --follow
 | `clientSecret` | `DINGTALK_CLIENT_SECRET` | 钉钉 AppSecret |
 | `gatewayToken` | `OPENCLAW_GATEWAY_TOKEN` | Gateway 认证 token（可选） |
 | `gatewayPassword` | — | Gateway 认证密码（可选，token 和 password 二选一） |
-| `dmPolicy` | — | 私聊策略：`open`、`pairing`、`allowlist` |
-| `groupPolicy` | — | 群聊策略：`open`、`pairing`、`allowlist` |
 
 ### 会话管理
 
@@ -251,32 +233,6 @@ openclaw logs --follow
 2. 检查网关状态：`openclaw gateway status`
 3. 查看日志：`openclaw logs --follow`
 4. 确认应用已在钉钉开放平台发布
-
----
-
-### HTTP 405 错误
-
-**症状**：错误信息显示 "405 Method Not Allowed"
-
-**原因**：Chat Completions 端点未启用
-
-**解决方案**：
-1. 编辑 `~/.openclaw/openclaw.json`
-2. 添加以下配置：
-   ```json5
-   {
-     "gateway": {
-       "http": {
-         "endpoints": {
-           "chatCompletions": {
-             "enabled": true
-           }
-         }
-       }
-     }
-   }
-   ```
-3. 重启网关：`openclaw gateway restart`
 
 ---
 
