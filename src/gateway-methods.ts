@@ -16,8 +16,6 @@ import { getUnionId } from "./utils/utils-legacy.ts";
 export function registerGatewayMethods(api: OpenClawPluginApi) {
   const log = api.logger;
   
-  log?.info?.('[DingTalk][Gateway] 开始注册 Gateway Methods...');
-
   // ============ 消息发送类 ============
 
   /**
@@ -32,7 +30,6 @@ export function registerGatewayMethods(api: OpenClawPluginApi) {
    * });
    * ```
    */
-  log?.info?.('[DingTalk][Gateway] 注册方法: dingtalk-connector.sendToUser');
   api.registerGatewayMethod('dingtalk-connector.sendToUser', async ({ context, params, respond }) => {
     const cfg = context.deps.getConfig();
     try {

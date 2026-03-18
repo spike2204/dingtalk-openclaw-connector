@@ -225,7 +225,7 @@ async function sendNormalToUser(
     };
 
     log?.info?.(
-      `[DingTalk][Normal] 发送单聊消息: userIds=${userIdArray.join(",")}, msgType=${msgType}`,
+      `发送单聊消息: userIds=${userIdArray.join(",")}, msgType=${msgType}`,
     );
 
     const resp = await axios.post(
@@ -242,7 +242,7 @@ async function sendNormalToUser(
 
     if (resp.data?.processQueryKey) {
       log?.info?.(
-        `[DingTalk][Normal] 发送成功: processQueryKey=${resp.data.processQueryKey}`,
+        `发送成功: processQueryKey=${resp.data.processQueryKey}`,
       );
       return {
         ok: true,
@@ -252,7 +252,7 @@ async function sendNormalToUser(
     }
 
     log?.warn?.(
-      `[DingTalk][Normal] 发送响应异常: ${JSON.stringify(resp.data)}`,
+      `发送响应异常: ${JSON.stringify(resp.data)}`,
     );
     return {
       ok: false,
@@ -261,7 +261,7 @@ async function sendNormalToUser(
     };
   } catch (err: any) {
     const errMsg = err.response?.data?.message || err.message;
-    log?.error?.(`[DingTalk][Normal] 发送失败: ${errMsg}`);
+    log?.error?.(`发送失败: ${errMsg}`);
     return { ok: false, error: errMsg, usedAICard: false };
   }
 }
@@ -292,7 +292,7 @@ async function sendNormalToGroup(
     };
 
     log?.info?.(
-      `[DingTalk][Normal] 发送群聊消息: openConversationId=${openConversationId}, msgType=${msgType}`,
+      `发送群聊消息: openConversationId=${openConversationId}, msgType=${msgType}`,
     );
 
     const resp = await axios.post(
@@ -309,7 +309,7 @@ async function sendNormalToGroup(
 
     if (resp.data?.processQueryKey) {
       log?.info?.(
-        `[DingTalk][Normal] 发送成功: processQueryKey=${resp.data.processQueryKey}`,
+        `发送成功: processQueryKey=${resp.data.processQueryKey}`,
       );
       return {
         ok: true,
@@ -319,7 +319,7 @@ async function sendNormalToGroup(
     }
 
     log?.warn?.(
-      `[DingTalk][Normal] 发送响应异常: ${JSON.stringify(resp.data)}`,
+      `发送响应异常: ${JSON.stringify(resp.data)}`,
     );
     return {
       ok: false,
@@ -328,7 +328,7 @@ async function sendNormalToGroup(
     };
   } catch (err: any) {
     const errMsg = err.response?.data?.message || err.message;
-    log?.error?.(`[DingTalk][Normal] 发送失败: ${errMsg}`);
+    log?.error?.(`发送失败: ${errMsg}`);
     return { ok: false, error: errMsg, usedAICard: false };
   }
 }
@@ -354,16 +354,16 @@ async function sendAICardInternal(
     // 1. 后处理01：上传本地图片到钉钉，替换路径为 media_id
     let processedContent = content;
     if (oapiToken) {
-      log?.info?.(`[DingTalk][AICard][Proactive] 开始图片后处理`);
+      log?.info?.(`开始图片后处理`);
       processedContent = await processLocalImages(content, oapiToken, log);
     } else {
       log?.warn?.(
-        `[DingTalk][AICard][Proactive] 无法获取 oapiToken，跳过媒体后处理`,
+        `无法获取 oapiToken，跳过媒体后处理`,
       );
     }
 
     // 2. 后处理02：提取视频标记并发送视频消息
-    log?.info?.(`[DingTalk][Video][Proactive] 开始视频后处理`);
+    log?.info?.(`开始视频后处理`);
     processedContent = await processVideoMarkers(
       processedContent,
       "",
@@ -375,7 +375,7 @@ async function sendAICardInternal(
     );
 
     // 3. 后处理03：提取音频标记并发送音频消息
-    log?.info?.(`[DingTalk][Audio][Proactive] 开始音频后处理`);
+    log?.info?.(`开始音频后处理`);
     processedContent = await processAudioMarkers(
       processedContent,
       "",
@@ -387,7 +387,7 @@ async function sendAICardInternal(
     );
 
     // 4. 后处理04：提取文件标记并发送独立文件消息
-    log?.info?.(`[DingTalk][File][Proactive] 开始文件后处理`);
+    log?.info?.(`开始文件后处理`);
     processedContent = await processFileMarkers(
       processedContent,
       "",
@@ -402,7 +402,7 @@ async function sendAICardInternal(
     const trimmedContent = processedContent.trim();
     if (!trimmedContent) {
       log?.info?.(
-        `[DingTalk][AICard][Proactive] 处理后内容为空（纯文件/视频消息），跳过创建 AI Card`,
+        `处理后内容为空（纯文件/视频消息），跳过创建 AI Card`,
       );
       return { ok: true, usedAICard: false };
     }
@@ -421,16 +421,16 @@ async function sendAICardInternal(
     await finishAICard(card, processedContent, log);
 
     log?.info?.(
-      `[DingTalk][AICard][Proactive] AI Card 发送成功: ${targetDesc}, cardInstanceId=${card.cardInstanceId}`,
+      `AI Card 发送成功: ${targetDesc}, cardInstanceId=${card.cardInstanceId}`,
     );
     return { ok: true, cardInstanceId: card.cardInstanceId, usedAICard: true };
   } catch (err: any) {
     log?.error?.(
-      `[DingTalk][AICard][Proactive] AI Card 发送失败 (${targetDesc}): ${err.message}`,
+      `AI Card 发送失败 (${targetDesc}): ${err.message}`,
     );
     if (err.response) {
       log?.error?.(
-        `[DingTalk][AICard][Proactive] 错误响应: status=${err.response.status} data=${JSON.stringify(err.response.data)}`,
+        `错误响应: status=${err.response.status} data=${JSON.stringify(err.response.data)}`,
       );
     }
     return {
@@ -505,9 +505,11 @@ export async function sendTextToDingTalk(params: {
 }): Promise<SendResult> {
   const { config, target, text, replyToId } = params;
 
+  const log = createLoggerFromConfig(config, 'sendTextToDingTalk');
+
   // 参数校验
   if (!target || typeof target !== "string") {
-    console.error("[sendTextToDingTalk] target 参数无效:", target);
+    log.error("target 参数无效:", target);
     return { ok: false, error: "Invalid target parameter", usedAICard: false };
   }
 
@@ -533,12 +535,6 @@ export async function sendMediaToDingTalk(params: {
   mediaUrl: string;
   replyToId?: string;
 }): Promise<SendResult> {
-  // 临时调试：打印 config.debug 的值
-  console.log('[sendMediaToDingTalk] config.debug =', params.config?.debug, 'config =', JSON.stringify({
-    debug: params.config?.debug,
-    hasConfig: !!params.config,
-  }));
-  
   const log = createLoggerFromConfig(params.config, 'sendMediaToDingTalk');
   
   log.info(
@@ -731,7 +727,7 @@ export async function sendMediaToDingTalk(params: {
       processQueryKey: result.processQueryKey || "media-message-sent",
     };
   } catch (err: any) {
-    console.error("[sendMediaToDingTalk] 发送媒体消息失败:", err.message);
+    log.error("发送媒体消息失败:", err.message);
     // 发生错误，发送文本消息提示
     return sendProactive(
       config,
@@ -751,8 +747,10 @@ export async function sendProactive(
   content: string,
   options: ProactiveSendOptions = {},
 ): Promise<SendResult> {
-  console.log(
-    "[sendProactive] 开始处理，参数:",
+  const log = createLoggerFromConfig(config, 'sendProactive');
+  
+  log.info(
+    "开始处理，参数:",
     JSON.stringify({
       target,
       contentLength: content?.length,
@@ -773,7 +771,7 @@ export async function sendProactive(
   if (target.userId || target.userIds) {
     const userIds = target.userIds || [target.userId!];
     const userId = userIds[0];
-    console.log("[sendProactive] 发送给用户，userId:", userId);
+    log.info("发送给用户，userId:", userId);
 
     // 构建发送参数
     return sendProactiveInternal(
@@ -785,8 +783,8 @@ export async function sendProactive(
   }
 
   if (target.openConversationId) {
-    console.log(
-      "[sendProactive] 发送给群聊，openConversationId:",
+    log.info(
+      "发送给群聊，openConversationId:",
       target.openConversationId,
     );
     return sendProactiveInternal(
@@ -797,7 +795,7 @@ export async function sendProactive(
     );
   }
 
-  console.error("[sendProactive] target 参数缺少必要字段:", target);
+  log.error("target 参数缺少必要字段:", target);
   return {
     ok: false,
     error: "Must specify userId, userIds, or openConversationId",
@@ -814,8 +812,10 @@ async function sendProactiveInternal(
   content: string,
   options: ProactiveSendOptions,
 ): Promise<SendResult> {
-  console.log(
-    "[sendProactiveInternal] 开始处理，参数:",
+  const log = createLoggerFromConfig(config, 'sendProactiveInternal');
+  
+  log.info(
+    "开始处理，参数:",
     JSON.stringify({
       target,
       contentLength: content?.length,
@@ -828,7 +828,7 @@ async function sendProactiveInternal(
 
   // 参数校验
   if (!target || typeof target !== "object") {
-    console.error("[sendProactiveInternal] target 参数无效:", target);
+    log.error("target 参数无效:", target);
     return { ok: false, error: "Invalid target parameter", usedAICard: false };
   }
 
@@ -836,15 +836,15 @@ async function sendProactiveInternal(
     msgType = "text",
     useAICard = false,
     fallbackToNormal = false,
-    log,
+    log: externalLog,
   } = options;
 
   // 如果启用 AI Card
   if (useAICard) {
     try {
-      const card = await createAICardForTarget(config, target, log);
+      const card = await createAICardForTarget(config, target, externalLog);
       if (card) {
-        await finishAICard(card, content, log);
+        await finishAICard(card, content, externalLog);
         return {
           ok: true,
           cardInstanceId: card.cardInstanceId,
@@ -859,7 +859,7 @@ async function sendProactiveInternal(
         };
       }
     } catch (err: any) {
-      log?.error?.(`[DingTalk] AI Card 发送失败: ${err.message}`);
+      externalLog?.error?.(`AI Card 发送失败: ${err.message}`);
       if (!fallbackToNormal) {
         return { ok: false, error: err.message, usedAICard: false };
       }
@@ -868,20 +868,20 @@ async function sendProactiveInternal(
 
   // 发送普通消息
   try {
-    console.log(
-      "[sendProactiveInternal] 准备发送普通消息，target.type:",
+    log.info(
+      "准备发送普通消息，target.type:",
       target.type,
     );
     const token = await getAccessToken(config);
     const isUser = target.type === "user";
-    console.log(
-      "[sendProactiveInternal] isUser:",
+    log.info(
+      "isUser:",
       isUser,
       "target:",
       JSON.stringify(target),
     );
     const targetId = isUser ? target.userId : target.openConversationId;
-    console.log("[sendProactiveInternal] targetId:", targetId);
+    log.info("targetId:", targetId);
 
     // ✅ 根据目标类型选择不同的 API
     const webhookUrl = isUser
@@ -910,8 +910,8 @@ async function sendProactiveInternal(
       body.openConversationId = targetId;
     }
 
-    log?.info?.(
-      `[DingTalk] 发送${isUser ? '单聊' : '群聊'}消息：${isUser ? 'userIds=' : 'openConversationId='}${targetId}`,
+    externalLog?.info?.(
+      `发送${isUser ? '单聊' : '群聊'}消息：${isUser ? 'userIds=' : 'openConversationId='}${targetId}`,
     );
 
     const resp = await axios.post(webhookUrl, body, {
@@ -926,14 +926,13 @@ async function sendProactiveInternal(
       const dataPreview = JSON.stringify(resp.data ?? {});
       const truncated =
         dataPreview.length > 2000 ? `${dataPreview.slice(0, 2000)}...(truncated)` : dataPreview;
-      const msg = `[DingTalk] 发送${isUser ? "单聊" : "群聊"}消息响应：status=${resp.status}, processQueryKey=${resp.data?.processQueryKey ?? ""}, data=${truncated}`;
-      // 某些运行环境可能不展示自定义 logger 输出，因此同时打到 console
-      console.log(msg);
-      log?.info?.(msg);
+      const msg = `发送${isUser ? "单聊" : "群聊"}消息响应：status=${resp.status}, processQueryKey=${resp.data?.processQueryKey ?? ""}, data=${truncated}`;
+      log.info(msg);
+      externalLog?.info?.(msg);
     } catch {
-      const msg = `[DingTalk] 发送${isUser ? "单聊" : "群聊"}消息响应：status=${resp.status}, processQueryKey=${resp.data?.processQueryKey ?? ""}`;
-      console.log(msg);
-      log?.info?.(msg);
+      const msg = `发送${isUser ? "单聊" : "群聊"}消息响应：status=${resp.status}, processQueryKey=${resp.data?.processQueryKey ?? ""}`;
+      log.info(msg);
+      externalLog?.info?.(msg);
     }
 
     return {
@@ -960,9 +959,9 @@ async function sendProactiveInternal(
           ? ` data=${respPreview}`
           : "";
 
-    const msg = `[DingTalk] 发送${target.type === "user" ? "单聊" : "群聊"}消息失败：${baseMsg}${extra}`;
-    console.error(msg);
-    log?.error?.(msg);
+    const msg = `发送${target.type === "user" ? "单聊" : "群聊"}消息失败：${baseMsg}${extra}`;
+log.error(msg);
+externalLog.error(msg);
     return { ok: false, error: baseMsg, usedAICard: false };
   }
 }

@@ -7,6 +7,10 @@ export default defineConfig({
     setupFiles: ['./tests/setup.ts'],
     testTimeout: 30000,
     hookTimeout: 30000,
+    // 默认包含所有测试文件
+    include: ['tests/**/*.{test,unit.test}.ts'],
+    // 只排除 node_modules
+    exclude: ['node_modules/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
@@ -15,6 +19,7 @@ export default defineConfig({
         'tests/**',
         '**/*.test.ts',
         '**/*.config.ts',
+        'src/old/**',
       ],
     },
   },
