@@ -211,12 +211,17 @@ INSTALLED_PLUGINS=$(openclaw plugins list 2>/dev/null || echo "")
 if echo "$INSTALLED_PLUGINS" | grep -q "dingtalk-connector"; then
     echo "📦 检测到已安装的 dingtalk-connector，正在卸载..."
     # 使用 -f 强制卸载，避免交互式确认
+    # 捕获卸载错误，即使失败也继续执行（可能是插件文件已被手动删除）
     if command -v yes &> /dev/null; then
-        yes | openclaw plugins uninstall dingtalk-connector
+        yes | openclaw plugins uninstall dingtalk-connector 2>&1 || {
+            echo "⚠️  卸载过程出现错误（可能插件文件已被手动删除），将继续安装..."
+        }
     else
-        echo "y" | openclaw plugins uninstall dingtalk-connector
+        echo "y" | openclaw plugins uninstall dingtalk-connector 2>&1 || {
+            echo "⚠️  卸载过程出现错误（可能插件文件已被手动删除），将继续安装..."
+        }
     fi
-    echo "✅ 旧版本已卸载"
+    echo "✅ 旧版本处理完成"
 else
     echo "ℹ️  未检测到已安装的 dingtalk-connector，跳过卸载"
 fi
