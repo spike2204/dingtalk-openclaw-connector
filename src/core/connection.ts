@@ -365,6 +365,11 @@ export async function monitorSingleAccount(
     logger.debug(`Connection 已停止`);
   }
 
+  // 初始化：设置所有事件监听器
+  setupPongListener();
+  setupMessageListener();
+  setupCloseListener();
+
   return new Promise<void>(async (resolve, reject) => {
     // Handle abort signal
     if (abortSignal) {
@@ -526,11 +531,6 @@ export async function monitorSingleAccount(
       logger.info(
         `✅ 自定义 keepAlive: true (10 秒心跳，90 秒超时), 指数退避重连`,
       );
-
-      // ✅ 连接成功后，设置所有事件监听器
-      setupPongListener();
-      setupMessageListener();
-      setupCloseListener();
 
       // 启动自定义心跳检测
       const cleanupKeepAlive = startKeepAlive();
