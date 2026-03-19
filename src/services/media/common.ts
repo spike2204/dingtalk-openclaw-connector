@@ -8,6 +8,9 @@ import axios from 'axios';
 import { createLogger } from '../../utils/logger.ts';
 import { CHUNK_CONFIG } from './chunk-upload.ts';
 
+// 🔧 禁用 axios 代理，防止 HTTP 代理导致 HTTPS 请求失败
+axios.defaults.proxy = false;
+
 // ============ 常量 ============
 
 /** 文本文件扩展名 */

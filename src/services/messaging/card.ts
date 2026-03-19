@@ -7,6 +7,11 @@ import axios from "axios";
 import type { DingtalkConfig } from "../../types/index.ts";
 import { DINGTALK_API, getAccessToken } from "../../utils/token.ts";
 
+// 🔧 禁用 axios 代理，防止 HTTP 代理导致 HTTPS 请求失败
+// 问题：环境变量中的 http_proxy/https_proxy 可能使用 HTTP 协议
+// 解决：禁用代理，确保直接 HTTPS 连接
+axios.defaults.proxy = false;
+
 // ============ 常量 ============
 
 const AI_CARD_TEMPLATE_ID = "02fcf2f4-5e02-4a85-b672-46d1f715543e.schema";

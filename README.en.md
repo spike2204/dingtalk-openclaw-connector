@@ -192,8 +192,6 @@ openclaw logs --follow
 |--------|---------------------|-------------|
 | `clientId` | — | DingTalk AppKey |
 | `clientSecret` | — | DingTalk AppSecret |
-| `gatewayToken` | `OPENCLAW_GATEWAY_TOKEN` | Gateway auth token (optional) |
-| `gatewayPassword` | — | Gateway auth password (optional, use token OR password) |
 
 ### Session Management
 

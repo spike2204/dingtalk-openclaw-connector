@@ -192,8 +192,6 @@ openclaw logs --follow
 |------|---------|------|
 | `clientId` | — | 钉钉 AppKey |
 | `clientSecret` | — | 钉钉 AppSecret |
-| `gatewayToken` | `OPENCLAW_GATEWAY_TOKEN` | Gateway 认证 token（可选） |
-| `gatewayPassword` | — | Gateway 认证密码（可选，token 和 password 二选一） |
 
 ### 会话管理
 

@@ -6,6 +6,9 @@
 import axios from "axios";
 import type { DingtalkConfig } from "../types/index.ts";
 import { DINGTALK_API, getAccessToken, getOapiAccessToken } from "../utils/index.ts";
+
+// 🔧 禁用 axios 代理，防止 HTTP 代理导致 HTTPS 请求失败
+axios.defaults.proxy = false;
 import { createLoggerFromConfig } from "../utils/logger.ts";
 import {
   processLocalImages,
@@ -626,9 +629,24 @@ export async function sendMediaToDingTalk(params: {
     log.info("媒体类型判断完成:", mediaType);
 
     // 上传文件到钉钉
-    const debugEnabled =
-      config.debug === true || String(config.debug).toLowerCase() === "true";
-    log.info("准备调用 uploadMediaToDingTalk，参数:", { mediaUrl, mediaType, debug: debugEnabled });
+    // 根据媒体类型设置不同的大小限制（钉钉 OAPI 官方限制）
+    let maxSize: number;
+    switch (mediaType) {
+      case "image":
+        maxSize = 10 * 1024 * 1024; // 图片最大 10MB
+        break;
+      case "voice":
+        maxSize = 2 * 1024 * 1024; // 语音最大 2MB
+        break;
+      case "video":
+      case "file":
+        maxSize = 20 * 1024 * 1024; // 视频和文件最大 20MB
+        break;
+      default:
+        maxSize = 20 * 1024 * 1024; // 默认 20MB
+    }
+    
+    log.info("准备调用 uploadMediaToDingTalk，参数:", { mediaUrl, mediaType, maxSizeMB: (maxSize / (1024 * 1024)).toFixed(0) });
     if (!oapiToken) {
       log.error("oapiToken 为空，无法上传媒体文件");
       return sendProactive(
@@ -642,8 +660,8 @@ export async function sendMediaToDingTalk(params: {
       mediaUrl,
       mediaType,
       oapiToken,
-      20 * 1024 * 1024,
-      debugEnabled,
+      maxSize,
+      log,
     );
     log.info("uploadMediaToDingTalk 返回结果:", uploadResult);
 
@@ -656,20 +674,15 @@ export async function sendMediaToDingTalk(params: {
       });
     }
 
-    // uploadResult 现在是下载链接，需要提取 media_id
-    // 格式：https://down.dingtalk.com/media/{media_id}
-    const mediaId = uploadResult.replace(
-      "https://down.dingtalk.com/media/",
-      "",
-    );
-    log.info("提取 media_id:", mediaId);
+    // uploadResult 现在是对象，包含 mediaId、cleanMediaId、downloadUrl
+    log.info("提取 media_id:", uploadResult.mediaId);
 
     // 3. 根据媒体类型发送对应的消息
     const fileName = mediaUrl.split("/").pop() || "file";
 
     if (mediaType === "image") {
-      // 图片消息 - 发送真正的图片消息
-      const result = await sendProactive(config, targetParam, mediaId, {
+      // 图片消息 - 发送真正的图片消息，使用原始 mediaId（带 @）
+      const result = await sendProactive(config, targetParam, uploadResult.mediaId, {
         msgType: "image",
         replyToId,
       });
@@ -721,8 +734,8 @@ export async function sendMediaToDingTalk(params: {
     const stats = fs.statSync(mediaUrl);
     const fileSizeMB = (stats.size / (1024 * 1024)).toFixed(2);
 
-    // 构建下载链接（添加文件扩展名）
-    const downloadUrl = `${uploadResult}.${ext}`;
+    // 使用上传结果中的下载链接
+    const downloadUrl = uploadResult.downloadUrl;
 
     // 根据媒体类型选择图标和描述
     let icon = "📄";

@@ -9,6 +9,9 @@ import * as path from 'path';
 import type { DingtalkConfig } from '../types/index.ts';
 import { DINGTALK_OAPI, getOapiAccessToken } from '../utils/index.ts';
 
+// 🔧 禁用 axios 代理，防止 HTTP 代理导致 HTTPS 请求失败
+axios.defaults.proxy = false;
+
 // ============ 常量 ============
 
 /** 文本文件扩展名 */
@@ -76,13 +79,20 @@ export function toLocalPath(raw: string): string {
 /**
  * 通用媒体文件上传函数
  */
+/** 上传结果接口 */
+export interface UploadResult {
+  mediaId: string;      // 原始 media_id（带 @）
+  cleanMediaId: string; // 去掉 @ 的 media_id
+  downloadUrl: string;  // 下载链接
+}
+
 export async function uploadMediaToDingTalk(
   filePath: string,
   mediaType: 'image' | 'file' | 'video' | 'voice',
   oapiToken: string,
   maxSize: number = 20 * 1024 * 1024,
   log?: any,
-): Promise<string | null> {
+): Promise<UploadResult | null> {
   try {
     const FormData = (await import('form-data')).default;
 
@@ -101,12 +111,7 @@ export async function uploadMediaToDingTalk(
 
     log?.info?.(`文件大小：${fileSizeMB}MB`);
 
-    // ✅ 对于视频和文件类型，如果超过 20MB，提示用户
-    if ((mediaType === 'video' || mediaType === 'file') && fileSize > 20 * 1024 * 1024) {
-      log?.warn?.(`文件超过 20MB 限制，当前大小：${fileSizeMB}MB`);
-      return null;
-    }
-
+    // 检查文件大小是否超过限制
     if (stats.size > maxSize) {
       const maxSizeMB = (maxSize / (1024 * 1024)).toFixed(0);
       log?.warn?.(
@@ -149,7 +154,11 @@ export async function uploadMediaToDingTalk(
       // ✅ 将 media_id 转换为钉钉下载链接
       const downloadUrl = `https://down.dingtalk.com/media/${cleanMediaId}`;
       log?.info?.(`上传成功: media_id=${mediaId}, cleanMediaId=${cleanMediaId}, downloadUrl=${downloadUrl}`);
-      return downloadUrl;
+      return {
+        mediaId,
+        cleanMediaId,
+        downloadUrl,
+      };
     }
     log?.warn?.(`上传返回无 media_id: ${JSON.stringify(resp.data)}`);
     return null;
@@ -182,9 +191,9 @@ export async function processLocalImages(
       const [fullMatch, alt, rawPath] = match;
       // 清理转义字符（AI 可能会对含空格的路径添加 \ ）
       const cleanPath = rawPath.replace(/\\ /g, ' ');
-      const mediaId = await uploadMediaToDingTalk(cleanPath, 'image', oapiToken, 20 * 1024 * 1024, log);
-      if (mediaId) {
-        result = result.replace(fullMatch, `![${alt}](${mediaId})`);
+      const uploadResult = await uploadMediaToDingTalk(cleanPath, 'image', oapiToken, 20 * 1024 * 1024, log);
+      if (uploadResult) {
+        result = result.replace(fullMatch, `![${alt}](${uploadResult.downloadUrl})`);
       }
     }
   }
@@ -205,9 +214,9 @@ export async function processLocalImages(
     for (const match of newBareMatches.reverse()) {
       const [fullMatch, rawPath] = match;
       log?.info?.(`纯文本图片: "${fullMatch}" -> path="${rawPath}"`);
-      const mediaId = await uploadMediaToDingTalk(rawPath, 'image', oapiToken, 20 * 1024 * 1024, log);
-      if (mediaId) {
-        const replacement = `![](${mediaId})`;
+      const uploadResult = await uploadMediaToDingTalk(rawPath, 'image', oapiToken, 20 * 1024 * 1024, log);
+      if (uploadResult) {
+        const replacement = `![](${uploadResult.downloadUrl})`;
         result = result.slice(0, match.index!) + result.slice(match.index!).replace(fullMatch, replacement);
         log?.info?.(`替换纯文本路径为图片: ${replacement}`);
       }
@@ -397,28 +406,28 @@ export async function processVideoMarkers(
       }
 
       // 3. 上传视频
-      const videoMediaId = await uploadMediaToDingTalk(videoInfo.path, 'video', oapiToken, 20 * 1024 * 1024, log);
-      if (!videoMediaId) {
+      const videoUploadResult = await uploadMediaToDingTalk(videoInfo.path, 'video', oapiToken, 20 * 1024 * 1024, log);
+      if (!videoUploadResult) {
         log?.warn?.(`${logPrefix} 视频上传失败: ${videoInfo.path}`);
         statusMessages.push(`⚠️ 视频上传失败: ${fileName}（文件可能超过 20MB 限制）`);
         continue;
       }
-      const cleanVideoMediaId = videoMediaId.replace('https://down.dingtalk.com/media/', '');
+      const videoMediaId = videoUploadResult.mediaId; // 使用原始 media_id（带 @）
 
       // 4. 上传封面
-      const picMediaId = await uploadMediaToDingTalk(thumbnailPath, 'image', oapiToken, 20 * 1024 * 1024, log);
-      if (!picMediaId) {
+      const picUploadResult = await uploadMediaToDingTalk(thumbnailPath, 'image', oapiToken, 20 * 1024 * 1024, log);
+      if (!picUploadResult) {
         log?.warn?.(`${logPrefix} 封面上传失败: ${thumbnailPath}`);
         statusMessages.push(`⚠️ 视频封面上传失败: ${fileName}`);
         continue;
       }
-      const cleanPicMediaId = picMediaId.replace('https://down.dingtalk.com/media/', '');
+      const picMediaId = picUploadResult.mediaId; // 使用原始 media_id（带 @）
 
       // 5. 发送视频消息
       if (useProactiveApi && target) {
-        await sendVideoProactive(config, target, cleanVideoMediaId, cleanPicMediaId, metadata, log);
+        await sendVideoProactive(config, target, videoMediaId, picMediaId, metadata, log);
       } else {
-        await sendVideoMessage(config, sessionWebhook, fileName, videoMediaId, log, metadata);
+        await sendVideoMessage(config, sessionWebhook, fileName, videoUploadResult.downloadUrl, log, metadata);
       }
       
       statusMessages.push(`✅ 视频已发送: ${fileName}`);
@@ -551,8 +560,8 @@ export async function processAudioMarkers(
       const ext = path.extname(audioInfo.path).slice(1).toLowerCase();
 
       // 上传音频到钉钉
-      const mediaId = await uploadMediaToDingTalk(audioInfo.path, 'voice', oapiToken, 20 * 1024 * 1024, log);
-      if (!mediaId) {
+      const uploadResult = await uploadMediaToDingTalk(audioInfo.path, 'voice', oapiToken, 20 * 1024 * 1024, log);
+      if (!uploadResult) {
         statusMessages.push(`⚠️ 音频上传失败: ${fileName}（文件可能超过 20MB 限制）`);
         continue;
       }
@@ -562,9 +571,9 @@ export async function processAudioMarkers(
 
       // 发送音频消息
       if (useProactiveApi && target) {
-        await sendAudioProactive(config, target, fileName, mediaId, log, audioDurationMs ?? undefined);
+        await sendAudioProactive(config, target, fileName, uploadResult.downloadUrl, log, audioDurationMs ?? undefined);
       } else {
-        await sendAudioMessage(config, sessionWebhook, fileName, mediaId, log, audioDurationMs ?? undefined);
+        await sendAudioMessage(config, sessionWebhook, fileName, uploadResult.downloadUrl, log, audioDurationMs ?? undefined);
       }
       statusMessages.push(`✅ 音频已发送: ${fileName}`);
       log?.info?.(`${logPrefix} 音频处理完成: ${fileName}`);
@@ -653,17 +662,17 @@ export async function processFileMarkers(
     const fileName = fileInfo.fileName || path.basename(fileInfo.path);
     try {
       // 上传文件到钉钉
-      const mediaId = await uploadMediaToDingTalk(fileInfo.path, 'file', oapiToken, 20 * 1024 * 1024, log);
-      if (!mediaId) {
+      const uploadResult = await uploadMediaToDingTalk(fileInfo.path, 'file', oapiToken, 20 * 1024 * 1024, log);
+      if (!uploadResult) {
         statusMessages.push(`⚠️ 文件上传失败: ${fileName}（文件可能超过 20MB 限制）`);
         continue;
       }
 
       // 发送文件消息
       if (useProactiveApi && target) {
-        await sendFileProactive(config, target, fileInfo, mediaId, log);
+        await sendFileProactive(config, target, fileInfo, uploadResult.downloadUrl, log);
       } else {
-        await sendFileMessage(config, sessionWebhook, fileInfo, mediaId, log);
+        await sendFileMessage(config, sessionWebhook, fileInfo, uploadResult.downloadUrl, log);
       }
       statusMessages.push(`✅ 文件已发送: ${fileName}`);
       log?.info?.(`${logPrefix} 文件处理完成: ${fileName}`);
@@ -1057,7 +1066,7 @@ export async function processRawMediaPaths(
       }
       
       // 上传文件到钉钉
-      const mediaId = await uploadMediaToDingTalk(
+      const uploadResult = await uploadMediaToDingTalk(
         filePath,
         mediaType,
         oapiToken,
@@ -1065,7 +1074,7 @@ export async function processRawMediaPaths(
         log
       );
       
-      if (!mediaId) {
+      if (!uploadResult) {
         log?.error?.(`${logPrefix} 文件上传失败: ${filePath}`);
         statusMessages.push(`⚠️ 文件上传失败: ${filePath}`);
         continue;
@@ -1079,7 +1088,8 @@ export async function processRawMediaPaths(
         const metadata = await extractVideoMetadata(filePath, log);
         
         if (target) {
-          await sendVideoProactive(config, target, mediaId, fileName, log, metadata);
+          // 视频消息需要原始 mediaId（带 @）
+          await sendVideoProactive(config, target, uploadResult.mediaId, fileName, log, metadata);
         }
         statusMessages.push(`✅ 视频已发送: ${fileName}`);
       } else if (mediaType === 'voice') {
@@ -1087,7 +1097,8 @@ export async function processRawMediaPaths(
         const durationMs = await extractAudioDuration(filePath, log);
         
         if (target) {
-          await sendAudioProactive(config, target, fileName, mediaId, log, durationMs ?? undefined);
+          // 音频消息使用下载链接
+          await sendAudioProactive(config, target, fileName, uploadResult.downloadUrl, log, durationMs ?? undefined);
         }
         statusMessages.push(`✅ 音频已发送: ${fileName}`);
       } else {
@@ -1099,7 +1110,8 @@ export async function processRawMediaPaths(
         };
         
         if (target) {
-          await sendFileProactive(config, target, fileInfo, mediaId, log);
+          // 文件消息使用下载链接
+          await sendFileProactive(config, target, fileInfo, uploadResult.downloadUrl, log);
         }
         statusMessages.push(`✅ 文件已发送: ${fileName}`);
       }

@@ -33,9 +33,9 @@ export async function processLocalImages(
     for (const match of mdMatches) {
       const [fullMatch, alt, rawPath] = match;
       const cleanPath = rawPath.replace(/\\ /g, ' ');
-      const mediaId = await uploadMediaToDingTalk(cleanPath, 'image', oapiToken, 20 * 1024 * 1024, log);
-      if (mediaId) {
-        result = result.replace(fullMatch, `![${alt}](${mediaId})`);
+      const uploadResult = await uploadMediaToDingTalk(cleanPath, 'image', oapiToken, 20 * 1024 * 1024, log);
+      if (uploadResult) {
+        result = result.replace(fullMatch, `![${alt}](${uploadResult.downloadUrl})`);
       }
     }
   }
@@ -54,9 +54,9 @@ export async function processLocalImages(
     for (const match of newBareMatches.reverse()) {
       const [fullMatch, rawPath] = match;
       log?.info?.(`[DingTalk][Media] 纯文本图片："${fullMatch}" -> path="${rawPath}"`);
-      const mediaId = await uploadMediaToDingTalk(rawPath, 'image', oapiToken, 20 * 1024 * 1024, log);
-      if (mediaId) {
-        const replacement = `![](${mediaId})`;
+      const uploadResult = await uploadMediaToDingTalk(rawPath, 'image', oapiToken, 20 * 1024 * 1024, log);
+      if (uploadResult) {
+        const replacement = `![](${uploadResult.downloadUrl})`;
         result = result.slice(0, match.index!) + result.slice(match.index!).replace(fullMatch, replacement);
         log?.info?.(`[DingTalk][Media] 替换纯文本路径为图片：${replacement}`);
       }

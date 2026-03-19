@@ -7,6 +7,9 @@ import axios from 'axios';
 import type { DingtalkConfig } from '../../types/index.ts';
 import { DINGTALK_API, getAccessToken } from '../../utils/token.ts';
 
+// 🔧 禁用 axios 代理，防止 HTTP 代理导致 HTTPS 请求失败
+axios.defaults.proxy = false;
+
 /** 消息类型枚举 */
 export type DingTalkMsgType = 'text' | 'markdown' | 'link' | 'actionCard' | 'image';
 

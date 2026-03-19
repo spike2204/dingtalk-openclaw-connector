@@ -13,6 +13,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createLogger } from '../../utils/logger.ts';
 
+// 🔧 禁用 axios 代理，防止 HTTP 代理导致 HTTPS 请求失败
+axios.defaults.proxy = false;
+
 const DINGTALK_OAPI = 'https://oapi.dingtalk.com';
 
 /** 分块上传配置 */
