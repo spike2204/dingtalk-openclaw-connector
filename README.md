@@ -27,16 +27,9 @@
 
 Before you begin, ensure you have:
 
-### 1. Node.js
+> This connector is used as an OpenClaw Gateway plugin, and you usually don't need to install or manage Node.js runtime by yourself.
 
-- **Version**: >= 22
-- **Download**: https://nodejs.org/
-- **Verify installation**:
-  ```bash
-  node --version
-  ```
-
-### 2. OpenClaw Gateway
+### 1. OpenClaw Gateway
 
 - **Official Website**: https://openclaw.ai/
 - **Installation**: Follow the official guide to install OpenClaw
@@ -46,7 +39,7 @@ Before you begin, ensure you have:
   ```
   Expected output: `✓ Gateway is running on http://127.0.0.1:18789`
 
-### 3. DingTalk Enterprise Account
+### 2. DingTalk Enterprise Account
 
 - You need a DingTalk enterprise account to create internal applications
 - Official Website: https://www.dingtalk.com/
@@ -56,6 +49,17 @@ Before you begin, ensure you have:
 ## Quick Start
 
 > 💡 **Goal**: Get your DingTalk bot working in ~5 minutes
+
+### Operating System Support
+
+This plugin has been verified on:
+
+- macOS / Linux: Use the default shell (zsh, bash, etc.).
+- Windows:
+  - Recommended: **PowerShell** or **Windows Terminal**.
+  - OpenClaw config file path (default): `C:\Users\<YourUserName>\.openclaw\openclaw.json`.
+
+Whenever you see `~/.openclaw/openclaw.json` below, it is equivalent to the above path on Windows.
 
 ### Step 1: Install the Plugin
 
@@ -75,29 +79,7 @@ You should see `✓ DingTalk Channel (v0.8.0) - loaded`
 
 ---
 
-### Step 2: Enable Chat Completions Endpoint
-
-Edit `~/.openclaw/openclaw.json` and ensure the following configuration exists:
-
-```json5
-{
-  "gateway": {
-    "http": {
-      "endpoints": {
-        "chatCompletions": {
-          "enabled": true
-        }
-      }
-    }
-  }
-}
-```
-
-> ⚠️ **Important**: Without this configuration, you may encounter HTTP 405 errors.
-
----
-
-### Step 3: Create a DingTalk Bot
+### Step 2: Create a DingTalk Bot
 
 #### 3.1 Create Application
 
@@ -134,11 +116,13 @@ Edit `~/.openclaw/openclaw.json` and ensure the following configuration exists:
 
 ---
 
-### Step 4: Configure OpenClaw
+### Step 3: Configure OpenClaw
 
 You have three options to configure the connector:
 
 #### Option A: Configuration Wizard (Recommended for Beginners)
+
+> You can directly copy and paste the following command into your terminal to run the configuration wizard.
 
 ```bash
 openclaw channels add
@@ -147,11 +131,13 @@ openclaw channels add
 Select **"DingTalk (钉钉)"** and follow the prompts to enter:
 - `clientId` (AppKey)
 - `clientSecret` (AppSecret)
-- Group policy settings
 
 #### Option B: Edit Configuration File
 
-Edit `~/.openclaw/openclaw.json`:
+Edit the configuration file:
+
+- macOS / Linux: `~/.openclaw/openclaw.json`
+- Windows: `C:\Users\<YourUserName>\.openclaw\openclaw.json`
 
 ```json5
 {
@@ -159,9 +145,7 @@ Edit `~/.openclaw/openclaw.json`:
     "dingtalk-connector": {
       "enabled": true,
       "clientId": "dingxxxxxxxxx",        // Your AppKey
-      "clientSecret": "your_app_secret",  // Your AppSecret
-      "dmPolicy": "open",                 // Direct message policy
-      "groupPolicy": "open"               // Group chat policy
+      "clientSecret": "your_app_secret"   // Your AppSecret
     }
   }
 }
@@ -169,16 +153,9 @@ Edit `~/.openclaw/openclaw.json`:
 
 > 💡 **Tip**: If the file already has content, add the `dingtalk-connector` section under the `channels` node.
 
-#### Option C: Environment Variables
-
-```bash
-export DINGTALK_CLIENT_ID="dingxxxxxxxxx"
-export DINGTALK_CLIENT_SECRET="your_app_secret"
-```
-
 ---
 
-### Step 5: Restart and Test
+### Step 4: Restart and Test
 
 ```bash
 # Restart OpenClaw Gateway
@@ -223,12 +200,10 @@ openclaw logs --follow
 
 | Option | Environment Variable | Description |
 |--------|---------------------|-------------|
-| `clientId` | `DINGTALK_CLIENT_ID` | DingTalk AppKey |
-| `clientSecret` | `DINGTALK_CLIENT_SECRET` | DingTalk AppSecret |
+| `clientId` | — | DingTalk AppKey |
+| `clientSecret` | — | DingTalk AppSecret |
 | `gatewayToken` | `OPENCLAW_GATEWAY_TOKEN` | Gateway auth token (optional) |
 | `gatewayPassword` | — | Gateway auth password (optional, use token OR password) |
-| `dmPolicy` | — | Direct message policy: `open`, `pairing`, `allowlist` |
-| `groupPolicy` | — | Group chat policy: `open`, `pairing`, `allowlist` |
 
 ### Session Management
 
@@ -259,32 +234,6 @@ openclaw logs --follow
 2. Check gateway status: `openclaw gateway status`
 3. Check logs: `openclaw logs --follow`
 4. Verify application is published in DingTalk Open Platform
-
----
-
-### HTTP 405 Error
-
-**Symptoms**: Error message shows "405 Method Not Allowed"
-
-**Cause**: Chat Completions endpoint not enabled
-
-**Solution**:
-1. Edit `~/.openclaw/openclaw.json`
-2. Add the following configuration:
-   ```json5
-   {
-     "gateway": {
-       "http": {
-         "endpoints": {
-           "chatCompletions": {
-             "enabled": true
-           }
-         }
-       }
-     }
-   }
-   ```
-3. Restart gateway: `openclaw gateway restart`
 
 ---
 
