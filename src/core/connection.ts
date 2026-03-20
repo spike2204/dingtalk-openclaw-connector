@@ -54,7 +54,7 @@ export type MessageHandler = (params: {
 /** 心跳间隔（毫秒） */
 const HEARTBEAT_INTERVAL = 10 * 1000; // 10 秒
 /** 超时阈值（毫秒） */
-const TIMEOUT_THRESHOLD = 90 * 1000; // 90 秒
+const TIMEOUT_THRESHOLD = 20 * 1000; // 20 秒（2 次心跳未响应）
 /** 基础退避时间（毫秒） */
 const BASE_BACKOFF_DELAY = 1000; // 1 秒
 /** 最大退避时间（毫秒） */
