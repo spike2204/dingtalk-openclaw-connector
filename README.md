@@ -276,6 +276,22 @@ openclaw logs --follow
 
 ```json5
 {
+  "agents": {
+    "ding-bot1": {
+      "enabled": true,
+      "name": "钉钉客服机器人",
+      "model": "your-model-config",
+      "systemPrompt": "你是一个专业的客服助手..."
+      // 其他 agent 配置...
+    },
+    "ding-bot2": {
+      "enabled": true,
+      "name": "钉钉技术支持机器人",
+      "model": "your-model-config",
+      "systemPrompt": "你是一个技术支持专家..."
+      // 其他 agent 配置...
+    }
+  },
   "channels": {
     "dingtalk-connector": {
       "enabled": true,

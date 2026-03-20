@@ -263,8 +263,24 @@ Both session routing/message policy options (including `pmpolicy` and `groupPoli
 
 Configure multiple bots connected to different agents:
 
-```json
+```json5
 {
+  "agents": {
+    "ding-bot1": {
+      "enabled": true,
+      "name": "Customer Service Bot",
+      "model": "your-model-config",
+      "systemPrompt": "You are a professional customer service assistant..."
+      // Other agent configurations...
+    },
+    "ding-bot2": {
+      "enabled": true,
+      "name": "Technical Support Bot",
+      "model": "your-model-config",
+      "systemPrompt": "You are a technical support expert..."
+      // Other agent configurations...
+    }
+  },
   "channels": {
     "dingtalk-connector": {
       "enabled": true,
