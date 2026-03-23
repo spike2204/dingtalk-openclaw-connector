@@ -2,6 +2,10 @@
 
 本文档是 DingTalk OpenClaw Connector 中 **Agent 路由（bindings）** 和 **SessionKey 构建** 的完整开发规范，供新功能开发和代码审查参考。
 
+涉及文件：
+- `src/utils/session.ts` — `buildSessionContext()` 函数，构建会话上下文
+- `src/core/message-handler.ts` — bindings 路由匹配、sessionKey 构建、消息队列管理
+
 ---
 
 ## 一、核心概念：两个职责分离的字段
@@ -11,7 +15,7 @@
 | 字段 | 职责 | 受配置影响 |
 |------|------|-----------|
 | `peerId` | **路由匹配专用**，始终是真实的 peer 标识（群聊为 `conversationId`，单聊为 `senderId`） | ❌ 不受任何会话隔离配置影响 |
-| `sessionPeerId` | **session/memory 隔离键**，用于构建 `sessionKey` | ✅ 受 `sharedMemoryAcrossConversations`、`separateSessionByConversation`、`groupSessionScope` 影响 |
+| `sessionPeerId` | **session/memory 隔离键**，用于构建 `sessionKey` 和消息队列 key | ✅ 受 `sharedMemoryAcrossConversations`、`separateSessionByConversation`、`groupSessionScope` 影响 |
 
 **核心原则**：
 - **路由匹配（去哪个 Agent）** → 使用 `peerId`
@@ -19,9 +23,78 @@
 
 ---
 
-## 二、Agent 路由规则（Bindings）
+## 二、buildSessionContext() 完整逻辑
 
-### 2.1 路由流程
+`buildSessionContext()` 在 `src/utils/session.ts` 中定义，每条消息到达时调用一次，根据消息原始字段和账号配置，决定 `peerId` 和 `sessionPeerId` 的值。
+
+### 2.1 输入参数
+
+| 参数 | 来源 | 说明 |
+|------|------|------|
+| `accountId` | 账号配置 key | 当前钉钉账号标识 |
+| `senderId` | 消息原始字段 `data.senderStaffId` | 发送者 userId |
+| `senderName` | 消息原始字段 `data.senderNick` | 发送者昵称 |
+| `conversationType` | 消息原始字段 `data.conversationType` | `"1"` = 单聊，其他 = 群聊 |
+| `conversationId` | 消息原始字段 `data.conversationId` | 群聊的会话 ID |
+| `groupSubject` | 消息原始字段 `data.conversationTitle` | 群名称 |
+| `separateSessionByConversation` | `config.separateSessionByConversation` | 是否按会话区分 session |
+| `groupSessionScope` | `config.groupSessionScope` | 群聊 session 粒度 |
+| `sharedMemoryAcrossConversations` | `config.sharedMemoryAcrossConversations` | 是否跨会话共享记忆 |
+
+### 2.2 peerId 的计算规则（固定，不受配置影响）
+
+```
+peerId = isDirect ? senderId : (conversationId || senderId)
+```
+
+- 单聊：`peerId = senderId`
+- 群聊：`peerId = conversationId`（无 conversationId 时降级为 senderId）
+
+### 2.3 sessionPeerId 的决策树
+
+配置优先级从高到低，**命中第一条即返回**：
+
+```
+sharedMemoryAcrossConversations === true
+  → sessionPeerId = accountId
+  （所有单聊+群聊共享同一记忆，以 accountId 为 session 键）
+
+separateSessionByConversation === false
+  → sessionPeerId = senderId
+  （按用户维度隔离，不区分群/单聊，同一用户在不同群共享 session）
+
+isDirect（单聊）
+  → sessionPeerId = senderId
+  （每个用户独立 session）
+
+groupSessionScope === 'group_sender'（群聊）
+  → sessionPeerId = `${conversationId}:${senderId}`
+  （群内每个用户独立 session）
+
+默认（群聊）
+  → sessionPeerId = conversationId || senderId
+  （整个群共享一个 session）
+```
+
+### 2.4 各配置组合下的完整取值表
+
+| 配置 | 场景 | `peerId` | `sessionPeerId` |
+|------|------|----------|-----------------|
+| `sharedMemoryAcrossConversations: true` | 单聊 | `senderId` | `accountId` |
+| `sharedMemoryAcrossConversations: true` | 群聊 | `conversationId` | `accountId` |
+| `separateSessionByConversation: false` | 单聊 | `senderId` | `senderId` |
+| `separateSessionByConversation: false` | 群聊 | `conversationId` | `senderId` |
+| `groupSessionScope: "group_sender"` | 群聊 | `conversationId` | `${conversationId}:${senderId}` |
+| 默认 | 单聊 | `senderId` | `senderId` |
+| 默认 | 群聊 | `conversationId` | `conversationId` |
+
+> **注意**：`sharedMemoryAcrossConversations: true` 优先级最高，会覆盖其他所有配置。
+
+---
+
+## 三、Agent 路由规则（Bindings）
+
+### 3.1 路由流程
 
 每条钉钉消息到达后，connector 按以下顺序确定目标 Agent：
 
@@ -37,7 +110,7 @@ matchedAgentId               ← 使用该 agentId
 cfg.defaultAgent || 'main'   ← 回退到默认 Agent
 ```
 
-### 2.2 Binding 匹配字段
+### 3.2 Binding 匹配字段
 
 每条 binding 的 `match` 字段支持以下维度，**所有指定的维度必须同时满足**（AND 关系）：
 
@@ -48,9 +121,10 @@ cfg.defaultAgent || 'main'   ← 回退到默认 Agent
 | `match.peer.kind` | `"direct" \| "group"?` | 会话类型，省略则匹配单聊和群聊 |
 | `match.peer.id` | `string?` | Peer 标识，群聊为 `conversationId`，单聊为 `senderId`，`"*"` 表示通配所有 |
 
-### 2.3 匹配逻辑
+### 3.3 匹配逻辑（源码）
 
 ```typescript
+// src/core/message-handler.ts
 for (const binding of cfg.bindings) {
   const match = binding.match;
   if (match.channel && match.channel !== 'dingtalk-connector') continue;
@@ -68,12 +142,12 @@ if (!matchedAgentId) {
 }
 ```
 
-### 2.4 优先级规则
+### 3.4 优先级规则
 
 - **顺序优先**：bindings 数组按顺序遍历，**第一条命中的规则生效**，后续规则不再检查
 - **精确规则放前面**：将指定了 `peer.id` 的精确规则放在通配规则（`peer.id: "*"`）之前，避免通配规则提前拦截
 
-### 2.5 典型配置示例
+### 3.5 典型配置示例
 
 **多群分配不同 Agent**：
 
@@ -144,78 +218,91 @@ if (!matchedAgentId) {
 
 ---
 
-## 三、SessionKey 构建规范
+## 四、SessionKey 构建规范
 
-### 3.1 SessionKey 格式
+### 4.1 SessionKey 格式
+
+SessionKey 由 SDK 的 `core.channel.routing.buildAgentSessionKey()` 生成，格式为：
 
 ```
 agent:{agentId}:{channel}:{peerKind}:{sessionPeerId}
 ```
 
 示例：
-- `agent:main:dingtalk-connector:direct:manager7195`（默认单聊，按用户隔离）
-- `agent:main:dingtalk-connector:group:cid3RKewszsVbXZYCYmbybVNw==`（默认群聊，按群隔离）
-- `agent:main:dingtalk-connector:direct:bot1`（`sharedMemoryAcrossConversations=true`，所有会话共享）
+- `agent:main:dingtalk-connector:direct:manager7195` — 默认单聊，按用户隔离
+- `agent:main:dingtalk-connector:group:cid3RKewszsVbXZYCYmbybVNw==` — 默认群聊，按群隔离
+- `agent:main:dingtalk-connector:direct:bot1` — `sharedMemoryAcrossConversations=true`，所有会话共享（sessionPeerId = accountId = "bot1"）
+- `agent:main:dingtalk-connector:group:bot1` — 同上，群聊也共享
 
-### 3.2 sessionPeerId 的取值规则
-
-`sessionPeerId` 由 `buildSessionContext()` 根据配置决定，控制 session/memory 的隔离粒度：
-
-| 配置 | 适用场景 | `sessionPeerId` 取值 | 效果 |
-|------|---------|---------------------|------|
-| `sharedMemoryAcrossConversations: true` | 所有会话共享记忆 | `accountId` | 单聊、群聊全部共享同一 session |
-| `separateSessionByConversation: false` | 按用户维度隔离，不区分群/单聊 | `senderId` | 同一用户在不同群的消息共享 session |
-| `groupSessionScope: "group_sender"` | 群内每个用户独立 session | `${conversationId}:${senderId}` | 同群不同用户各自独立 |
-| 默认（群聊） | 整个群共享一个 session | `conversationId` | 群内所有用户共享 session |
-| 默认（单聊） | 每个用户独立 session | `senderId` | 每个用户独立 session |
-
-> **注意**：`sharedMemoryAcrossConversations: true` 是全局开关，会同时影响单聊和群聊。如果只想让群聊共享记忆而单聊按用户隔离，该配置无法满足，需要在业务层自行处理。
-
-### 3.3 SessionKey 构建代码规范
-
-在 `message-handler.ts` 中，sessionKey 通过 SDK 标准方法构建，**必须使用 `sessionContext.sessionPeerId`**：
+### 4.2 SessionKey 构建代码规范
 
 ```typescript
+// src/core/message-handler.ts
 const dmScope = cfg.session?.dmScope || 'per-channel-peer';
 const sessionKey = core.channel.routing.buildAgentSessionKey({
   agentId: matchedAgentId,
-  channel: 'dingtalk-connector',
+  channel: 'dingtalk-connector',       // ✅ 固定值，不能写 'dingtalk'
   accountId: accountId,
   peer: {
-    kind: sessionContext.chatType,
-    id: sessionContext.sessionPeerId,  // ✅ 使用 sessionPeerId，不是 peerId
+    kind: sessionContext.chatType,       // 'direct' | 'group'
+    id: sessionContext.sessionPeerId,    // ✅ 使用 sessionPeerId，不是 peerId
   },
-  dmScope: dmScope,
+  dmScope: dmScope,                      // ✅ 必须传递，影响 sessionKey 格式
 });
 ```
 
 **禁止**：
-- 用 `sessionContext.peerId` 构建 sessionKey（peerId 是路由匹配专用，不受会话隔离配置影响）
+- 用 `sessionContext.peerId` 构建 sessionKey（`peerId` 是路由匹配专用）
 - 手动拼接 sessionKey 字符串（必须通过 SDK 的 `buildAgentSessionKey` 方法）
+- `channel` 写成 `'dingtalk'`（必须是 `'dingtalk-connector'`）
 
-### 3.4 消息队列 Key 规范
+### 4.3 消息队列 Key 规范
 
-消息队列 key（`queueKey`）用于控制同一会话内的消息串行处理，**必须与 sessionKey 使用相同的 `sessionPeerId`**，确保隔离策略一致：
+消息队列（`sessionQueues`）用于确保同一会话+Agent 的消息串行处理，避免并发冲突。队列 key 格式：
+
+```
+{sessionPeerId}:{agentId}
+```
+
+**必须与 sessionKey 使用相同的 `sessionPeerId`**，确保隔离策略一致：
 
 ```typescript
+// src/core/message-handler.ts
 const baseSessionId = sessionContext.sessionPeerId;
 const queueKey = `${baseSessionId}:${matchedAgentId}`;
 ```
 
+这样不同 Agent 可以并发处理，同一 Agent 的同一会话串行处理。
+
+### 4.4 InboundContext 中的 From / To 字段
+
+构建 `ctxPayload` 时，`From` 和 `To` 字段规则如下：
+
+| 字段 | 单聊 | 群聊 |
+|------|------|------|
+| `From` | `senderId` | `senderId` |
+| `To` | `senderId` | `conversationId` |
+| `OriginatingTo` | `senderId` | `conversationId` |
+
+```typescript
+const toField = isDirect ? senderId : data.conversationId;
+// From 始终是 senderId，To 单聊用 senderId，群聊用 conversationId
+```
+
 ---
 
-## 四、配置参数速查
+## 五、配置参数速查
 
-### 4.1 会话隔离相关配置
+### 5.1 会话隔离相关配置
 
 | 配置字段 | 类型 | 默认值 | 说明 |
 |---------|------|--------|------|
-| `sharedMemoryAcrossConversations` | `boolean` | `false` | 所有会话（单聊+群聊）共享同一记忆 |
+| `sharedMemoryAcrossConversations` | `boolean` | `false` | 所有会话（单聊+群聊）共享同一记忆，优先级最高 |
 | `separateSessionByConversation` | `boolean` | `true` | 是否按会话（群/单聊）区分 session；`false` 时按用户维度 |
 | `groupSessionScope` | `"group" \| "group_sender"` | `"group"` | 群聊 session 粒度；`group_sender` 时群内每人独立 |
 | `session.dmScope` | `string` | `"per-channel-peer"` | 传递给 SDK 的 dmScope 参数，影响 sessionKey 格式 |
 
-### 4.2 路由相关配置
+### 5.2 路由相关配置
 
 | 配置字段 | 类型 | 说明 |
 |---------|------|------|
@@ -224,7 +311,7 @@ const queueKey = `${baseSessionId}:${matchedAgentId}`;
 
 ---
 
-## 五、开发规范总结
+## 六、开发规范总结
 
 1. **路由匹配用 `peerId`**：`match.peer.id` 与 `sessionContext.peerId` 比较，`peerId` 始终是真实的 `conversationId`（群）或 `senderId`（单聊），不受任何会话隔离配置影响。
 
@@ -232,6 +319,8 @@ const queueKey = `${baseSessionId}:${matchedAgentId}`;
 
 3. **两者职责严格分离**：路由（去哪个 Agent）和记忆隔离（共享多大范围的上下文）是两个独立维度，代码中不能用同一个字段同时承担两种职责。
 
-4. **sessionKey 必须通过 SDK 构建**：使用 `core.channel.routing.buildAgentSessionKey()`，不要手动拼接字符串。
+4. **sessionKey 必须通过 SDK 构建**：使用 `core.channel.routing.buildAgentSessionKey()`，不要手动拼接字符串，`channel` 固定为 `'dingtalk-connector'`，`dmScope` 必须传递。
 
 5. **bindings 顺序即优先级**：精确规则（指定 `peer.id`）必须放在通配规则（`peer.id: "*"`）之前。
+
+6. **`sharedMemoryAcrossConversations` 优先级最高**：该配置开启后，`sessionPeerId` 被强制设为 `accountId`，覆盖其他所有会话隔离配置，但 `peerId` 不受影响，路由仍然正常工作。
