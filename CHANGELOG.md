@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 🐛 **发送图片失败** - 修复发送图片时出现异常的问题 ([#316](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/issues/316))  
   **Image sending failure** - Fixed an issue where sending images would fail with an error ([#316](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/issues/316))
 
+- 🐛 **发送人昵称与群名称未正确传递给 AI** - 修复会话上下文中 `SenderName` 字段错误传入用户 ID（而非昵称）、`GroupSubject` 字段错误传入群 ID（而非群名称）的问题，AI 现在能正确获取发送人的钉钉昵称和所在群的名称  
+  **Sender nickname and group name not passed to AI** - Fixed `SenderName` being set to user ID instead of display name, and `GroupSubject` being set to group ID instead of group title; AI now correctly receives the sender's nickname and group name
+
 ## [0.8.2] - 2026-03-22
 
 ### 修复 / Fixes

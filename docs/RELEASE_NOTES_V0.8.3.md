@@ -2,9 +2,9 @@
 
 ## 🎉 新版本亮点 / Highlights
 
-本次更新修复了两个重要问题：多 Agent 路由在 `sharedMemoryAcrossConversations` 配置下的路由错误，以及发送图片时的异常问题。
+本次更新修复了三个问题：多 Agent 路由在 `sharedMemoryAcrossConversations` 配置下的路由错误、发送图片时的异常问题，以及修复了发送人昵称和群名称未正确传递给 AI 的问题。
 
-This release fixes two important issues: incorrect multi-Agent routing when `sharedMemoryAcrossConversations` is enabled, and an image sending failure.
+This release fixes three issues: incorrect multi-Agent routing when `sharedMemoryAcrossConversations` is enabled, an image sending failure, and sender nickname and group name not being correctly passed to the AI.
 
 ## 🐛 修复 / Fixes
 
@@ -15,6 +15,10 @@ This release fixes two important issues: incorrect multi-Agent routing when `sha
 - **发送图片失败 / Image Sending Failure**  
   修复了发送图片时出现异常的问题。([#316](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/issues/316))  
   Fixed an issue where sending images would fail with an error. ([#316](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/issues/316))
+
+- **发送人昵称与群名称未正确传递给 AI / Sender Nickname and Group Name Not Passed to AI**  
+  修复了会话上下文中 `SenderName` 字段错误传入用户 ID（而非昵称）、`GroupSubject` 字段错误传入群 ID（而非群名称）的问题。修复后，AI 能正确获取发送人的钉钉昵称和所在群的名称，有助于 AI 更好地理解对话场景。  
+  Fixed an issue where the `SenderName` field in the session context was incorrectly set to the user ID instead of the display name, and `GroupSubject` was set to the group ID instead of the group title. After the fix, the AI correctly receives the sender's DingTalk nickname and the group name, enabling better contextual understanding.
 
 ## 📥 安装升级 / Installation & Upgrade
 
