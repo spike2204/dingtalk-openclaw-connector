@@ -415,8 +415,7 @@ export async function downloadFileToLocal(
     log?.info?.(`文件下载成功: ${fileName}, size=${buffer.length} bytes, path=${localPath}`);
     return localPath;
   } catch (err: any) {
-    console.error(`[ERROR] downloadFileToLocal 异常: ${err.message}`);
-    console.error(`[ERROR] 异常堆栈:\n${err.stack}`);
+    log?.error?.(`downloadFileToLocal 异常: ${err.message}\n${err.stack}`);
     return null;
   }
 }
@@ -536,9 +535,8 @@ interface HandleMessageParams {
  * 内部消息处理函数（实际执行消息处理逻辑）
  */
 export async function handleDingTalkMessageInternal(params: HandleMessageParams): Promise<void> {
-  const { accountId, config, data, sessionWebhook, runtime, log: inputLog, cfg } = params;
+  const { accountId, config, data, sessionWebhook, runtime, cfg } = params;
 
-  // 如果传入的 log 为空，则使用基于 config 的 logger
   const log = createLoggerFromConfig(config, `DingTalk:${accountId}`);
 
   const content = extractMessageContent(data);
@@ -1245,14 +1243,12 @@ export async function handleDingTalkMessage(params: HandleMessageParams): Promis
     // 更新队列
     sessionQueues.set(queueKey, currentTask);
 
-    // 等待当前任务完成
-    await currentTask;
-    console.log(`[DEBUG] 任务执行完成`);
+    // 不等待任务完成，立即返回，不阻塞 WebSocket 消息接收
+    // 消息处理在后台异步执行，队列保证同一会话+agent的消息串行处理
   } catch (err: any) {
-    console.error(`[DEBUG] 队列管理异常: ${err.message}`);
-    console.error(`[DEBUG] 队列管理异常堆栈: ${err.stack}`);
-    // 如果队列管理失败，直接调用内部处理函数
-    return handleDingTalkMessageInternal(params);
+    log?.error?.(`[队列] 队列管理异常，直接处理: ${err.message}`);
+    // 如果队列管理失败，直接调用内部处理函数（不阻塞）
+    void handleDingTalkMessageInternal(params);
   }
 }
 

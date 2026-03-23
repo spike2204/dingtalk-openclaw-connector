@@ -264,12 +264,12 @@ export function checkAndMarkDingtalkMessage(
   protocolMessageId: string | undefined,
   businessMsgId: string | undefined,
 ): boolean {
-  // 协议层去重：同一次投递的重复回调
-  if (protocolMessageId && isMessageProcessed(protocolMessageId)) {
-    return true;
-  }
-  // 业务层去重：钉钉服务端重发（headers.messageId 变了，但 data.msgId 不变）
-  if (businessMsgId && isMessageProcessed(businessMsgId)) {
+  // 先完整检查两个 ID，再决定是否标记
+  // 不能提前 return，否则命中去重的那条路径会漏掉对另一个 ID 的标记
+  const isProtocolDuplicate = protocolMessageId ? isMessageProcessed(protocolMessageId) : false;
+  const isBusinessDuplicate = businessMsgId ? isMessageProcessed(businessMsgId) : false;
+
+  if (isProtocolDuplicate || isBusinessDuplicate) {
     return true;
   }
 
