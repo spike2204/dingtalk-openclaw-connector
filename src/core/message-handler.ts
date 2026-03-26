@@ -62,7 +62,7 @@ import { QUEUE_BUSY_ACK_PHRASES } from "../utils/constants.ts";
 import { createDingtalkReplyDispatcher, normalizeSlashCommand } from "../reply-dispatcher.ts";
 import { getDingtalkRuntime } from "../runtime.ts";
 import { dingtalkHttp } from '../utils/http-client.ts';
-清楚import { createLoggerFromConfig } from '../utils/index.ts';
+import { createLoggerFromConfig } from '../utils/index.ts';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -285,8 +285,8 @@ export async function downloadImageToFile(
   try {
     log?.info?.(`开始下载图片: ${downloadUrl.slice(0, 100)}...`);
     const resp = await dingtalkHttp.get(downloadUrl, {
-      // 遵循全局代理策略：默认禁用代理（避免 PAC 影响），DINGTALK_FORCE_PROXY=true 时走系统代理
-      proxy: process.env.DINGTALK_FORCE_PROXY === 'true' ? undefined : false,
+      proxy: false, // 禁用代理，避免 PAC 文件影响
+
       headers: {
         'Content-Type': undefined, // 删除默认的 Content-Type 请求头，让 OSS 签名验证通过
       },
@@ -390,8 +390,7 @@ export async function downloadFileToLocal(
   try {
     log?.info?.(`开始下载文件: ${fileName}`);
     const resp = await dingtalkHttp.get(downloadUrl, {
-      // 遵循全局代理策略：默认禁用代理（避免 PAC 影响），DINGTALK_FORCE_PROXY=true 时走系统代理
-      proxy: process.env.DINGTALK_FORCE_PROXY === 'true' ? undefined : false,
+      proxy: false, // 禁用代理，避免 PAC 文件影响
       headers: {
         'Content-Type': undefined, // 删除默认的 Content-Type 请求头，让 OSS 签名验证通过
       },
@@ -1034,47 +1033,23 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
     });
 
     // 使用 SDK 的 dispatchReplyFromConfig
-    log?.info?.(`调用 withReplyDispatcher，asyncMode=${asyncMode}`);
-    log?.info?.(`准备调用 withReplyDispatcher...`);
-    
-    let dispatchResult;
-    try {
-      dispatchResult = await core.channel.reply.withReplyDispatcher({
-        dispatcher,
-        onSettled: () => {
-          log?.info?.(`onSettled 被调用`);
-          markDispatchIdle();
-        },
-        run: async () => {
-          log?.info?.(`run 被调用，开始 dispatchReplyFromConfig`);
-          log?.info?.(`ctxPayload.SessionKey=${ctxPayload.SessionKey}`);
-          log?.info?.(`ctxPayload.Body 长度=${ctxPayload.Body?.length || 0}`);
-          log?.info?.(`replyOptions keys=${Object.keys(replyOptions).join(',')}`);
-          
-          const result = await core.channel.reply.dispatchReplyFromConfig({
-            ctx: ctxPayload,
-            cfg,
-            dispatcher,
-            replyOptions,
-          });
-          
-          log?.info?.(`dispatchReplyFromConfig 返回: queuedFinal=${result.queuedFinal}, counts=${JSON.stringify(result.counts)}`);
-          return result;
-        },
-      });
-      log?.info?.(`withReplyDispatcher 返回成功`);
-    } catch (dispatchErr: any) {
-      log?.error?.(`withReplyDispatcher 抛出异常: ${dispatchErr?.message || dispatchErr}`);
-      log?.error?.(`异常堆栈: ${dispatchErr?.stack || 'no stack'}`);
-      log?.error?.(`消息处理异常，但不阻塞后续消息: ${dispatchErr?.message || dispatchErr}`);
+    const dispatchResult = await core.channel.reply.withReplyDispatcher({
+      dispatcher,
+      onSettled: () => {
+        markDispatchIdle();
+      },
+      run: async () => {
+        const result = await core.channel.reply.dispatchReplyFromConfig({
+          ctx: ctxPayload,
+          cfg,
+          dispatcher,
+          replyOptions,
+        });
+        return result;
+      },
+    });
 
-      // ⚠️ 不要直接 throw，避免阻塞后续消息处理
-      // 记录错误后继续执行，确保后续消息能正常处理
-      dispatchResult = { queuedFinal: false, counts: { final: 0, partial: 0, tool: 0 } };
-    }
-    
     const { queuedFinal, counts } = dispatchResult;
-    log?.info?.(`SDK dispatch 完成: queuedFinal=${queuedFinal}, replies=${counts.final}, asyncMode=${asyncMode}`);
 
     // ===== 异步模式：主动推送最终结果 =====
     if (asyncMode) {

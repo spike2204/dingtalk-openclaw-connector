@@ -556,12 +556,6 @@ export async function monitorSingleAccount(
         // 钉钉重发时 headers.messageId 是新值，但 data.msgId 不变，
         // checkAndMarkDingtalkMessage 会命中 data.msgId 并返回 true 拦截重发。
         const businessMsgId = data.msgId;
-        if (checkAndMarkDingtalkMessage(accountId, undefined, businessMsgId)) {
-          processedCount++;
-          logger.warn(`⚠️ 检测到钉钉服务端重发消息，跳过处理：msgId=${businessMsgId} (${processedCount}/${receivedCount})`);
-          logger.info(`========== 消息处理结束（业务层去重） ==========\n`);
-          return;
-        }
 
         // 记录消息内容（简化版，避免过长）
         let contentPreview = "N/A";
