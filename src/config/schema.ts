@@ -54,7 +54,6 @@ const DingtalkSharedConfigShape = {
   requireMention: z.boolean().optional(),
   groups: z.record(z.string(), DingtalkGroupSchema.optional()).optional(),
   historyLimit: z.number().int().min(0).optional(),
-  dmHistoryLimit: z.number().int().min(0).optional(),
   textChunkLimit: z.number().int().positive().optional(),
   mediaMaxMb: z.number().positive().optional(),
   tools: DingtalkToolsConfigSchema,
@@ -83,7 +82,11 @@ export const DingtalkAccountConfigSchema = z
   })
   .strict();
 
-export const DingtalkConfigSchema = z
+/**
+ * Base schema (ZodObject) without superRefine, used for JSON Schema generation (Web UI).
+ * superRefine turns the schema into ZodEffects which is not compatible with buildChannelConfigSchema.
+ */
+export const DingtalkConfigBaseSchema = z
   .object({
     enabled: z.boolean().optional(),
     defaultAccount: z.string().optional(),
@@ -102,8 +105,9 @@ export const DingtalkConfigSchema = z
     // Multi-account configuration
     accounts: z.record(z.string(), DingtalkAccountConfigSchema.optional()).optional(),
   })
-  .strict()
-  .superRefine((value, ctx) => {
+  .strict();
+
+export const DingtalkConfigSchema = DingtalkConfigBaseSchema.superRefine((value, ctx) => {
     const defaultAccount = value.defaultAccount?.trim();
     if (defaultAccount && value.accounts && Object.keys(value.accounts).length > 0) {
       const normalizedDefaultAccount = normalizeAccountId(defaultAccount);

@@ -96,7 +96,6 @@ export interface DingtalkAccountConfig {
   separateSessionByConversation?: boolean;
   sharedMemoryAcrossConversations?: boolean;
   historyLimit?: number;
-  dmHistoryLimit?: number;
   textChunkLimit?: number;
   mediaMaxMb?: number;
   typingIndicator?: boolean;
@@ -122,7 +121,6 @@ export interface DingtalkConfig {
   separateSessionByConversation?: boolean;
   sharedMemoryAcrossConversations?: boolean;
   historyLimit?: number;
-  dmHistoryLimit?: number;
   textChunkLimit?: number;
   mediaMaxMb?: number;
   typingIndicator?: boolean;
