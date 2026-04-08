@@ -5,35 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.13-beta.0] - 2026-04-06
+## [0.8.13] - 2026-04-08
 
 ### 修复 / Fixes
-- 🐛 **修复多账号场景下凭据未解析** - `sendText`/`sendMedia` 在多账号模式下 `clientId`/`clientSecret` 可能为 `SecretInput` 对象，导致 API 请求携带无效凭据。现已用 `resolveDingtalkAccount` 返回的已解析值覆盖原始 config  
-  **Fix unresolved credentials in sendText/sendMedia** - In multi-account mode, credentials could be `SecretInput` objects; now resolved values are used
+- 🐛 **修复文件发送 mediaId 格式不一致导致静默失败** - `sendFileProactive` 在不同调用点传入 `cleanMediaId`（不带 `@`）和 `mediaId`（带 `@`），经实测钉钉 API 统一要求带 `@` 前缀。同时修复 catch 块吞掉异常导致外层误报成功  
+  **Fix inconsistent mediaId format causing silent file send failure** - Unified to `@`-prefixed `mediaId`; fixed catch blocks swallowing errors
 
-- 🐛 **修复连接错误在 async 回调中无法传播** - `connection.ts` 错误处理使用 `throw` 抛出，但在 async 回调内无法被外层 Promise 捕获。改为 `reject(new Error(...))` 确保 400/401 等错误正确传播  
-  **Fix connection errors not propagating in async callback** - Changed `throw` to `reject()` inside async error handlers
+- 🐛 **修复多账号场景下凭据未解析** - `sendText`/`sendMedia` 在多账号模式下 `clientId`/`clientSecret` 可能为 `SecretInput` 对象，现已用已解析值覆盖  
+  **Fix unresolved credentials in multi-account mode** - Resolved values now override raw config
 
-- 🐛 **修复 QPS 限流后立即重试触发再次限流** - 收到 403 QpsLimit 后未更新 `lastUpdateTime`，导致节流检查立即放行。现已同步更新节流时间  
-  **Fix QPS rate limit immediate retry** - `lastUpdateTime` is now synced when skipping a QPS-limited update
+- 🐛 **修复连接错误在 async 回调中无法传播** - 改为 `reject(new Error(...))` 确保 400/401 等错误正确传播  
+  **Fix connection errors not propagating** - Changed `throw` to `reject()` inside async error handlers
 
-- 🐛 **修复 `resolveAllowFrom` 全局过滤误拦截群消息** - `allowFrom` 仅用于私聊白名单，群消息由 `groupAllowFrom` 在内部处理。将 `resolveAllowFrom` 改为返回空列表，禁用框架层全局过滤  
-  **Fix resolveAllowFrom global filter blocking group messages** - Returns `[]` to disable framework-level filtering; internal policy checks handle DM and group separately
+- 🐛 **修复 QPS 限流后立即重试** - 收到 403 QpsLimit 后同步更新 `lastUpdateTime`  
+  **Fix QPS rate limit immediate retry** - `lastUpdateTime` is now synced when skipping
+
+- 🐛 **修复 `resolveAllowFrom` 全局过滤误拦截群消息** - 返回空列表禁用框架层全局过滤，群消息由内部 `groupAllowFrom` 处理  
+  **Fix resolveAllowFrom blocking group messages** - Returns `[]` to disable framework-level filtering
 
 ### 新增 / Added
-- ✨ **消息路由支持 `group:`/`user:` 前缀** - `sendTextToDingTalk` 和 `sendMediaToDingTalk` 新增 `group:<id>` 和 `user:<id>` 格式解析，与 `gateway-methods.ts` 保持一致，兼容旧版裸 `cid` 前缀  
-  **Message routing supports `group:`/`user:` prefix targets** - Consistent with `gateway-methods.ts`, backward compatible with bare `cid` prefix
+- ✨ **消息路由支持 `group:`/`user:` 前缀** - `sendTextToDingTalk` 和 `sendMediaToDingTalk` 新增前缀格式解析，兼容旧版裸 `cid` 前缀  
+  **Message routing supports `group:`/`user:` prefix targets** - Backward compatible with bare `cid` prefix
 
 ### 改进 / Improvements
-- ✅ **兼容 pdf-parse v1 和 v2 API** - `parsePdfFile` 自动检测 pdf-parse 导出格式，v2.x 使用 `PDFParse` 类，v1.x 使用 `default` 函数  
-  **Support both pdf-parse v1 and v2 API** - Auto-detects export format: v2.x class API or v1.x function API
+- ✅ **兼容 pdf-parse v1/v2 API** - 自动检测导出格式，v2.x 使用 class API，v1.x 使用函数 API  
+  **Support both pdf-parse v1 and v2 API** - Auto-detects export format
 
-- ✅ **`enableMediaUpload`/`systemPrompt` 移至共享配置** - 这两个字段现在支持多账号模式下每个账号独立配置  
-  **Move `enableMediaUpload`/`systemPrompt` to shared config** - Now configurable per-account in multi-account mode
+- ✅ **`enableMediaUpload`/`systemPrompt` 移至共享配置** - 支持多账号独立配置  
+  **Move `enableMediaUpload`/`systemPrompt` to shared config** - Per-account configurable
+
+- ✅ **新增出站路由测试** - 覆盖 `group:`/`user:` 前缀解析和消息路由场景  
+  **Add outbound routing tests** - Covers prefix parsing and routing scenarios
 
 ### 文档 / Documentation
 - 📝 **优化 README 安装验证说明** - 移除版本号硬编码，新增插件未加载时的警示提示  
-  **Improve README plugin verification instructions** - Removed hardcoded version, added warning when plugin is not loaded
+  **Improve README plugin verification instructions** - Removed hardcoded version, added warning
 
 ## [0.8.12] - 2026-04-01
 

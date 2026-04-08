@@ -229,7 +229,7 @@ export async function sendNormalToUser(
   try {
     const token = await getAccessToken(config);
     const body = {
-      robotCode: config.clientId,
+      robotCode: String(config.clientId),
       userIds: userIdArray,
       msgKey: payload.msgKey,
       msgParam: JSON.stringify(payload.msgParam),
@@ -306,7 +306,7 @@ export async function sendNormalToGroup(
   try {
     const token = await getAccessToken(config);
     const body = {
-      robotCode: config.clientId,
+      robotCode: String(config.clientId),
       openConversationId,
       msgKey: payload.msgKey,
       msgParam: JSON.stringify(payload.msgParam),
@@ -439,7 +439,7 @@ export async function sendAICardInternal(
     }
 
     // 7. 使用 finishAICard 设置内容
-    await finishAICard(card, processedContent, log);
+    await finishAICard(card, processedContent, config, log);
 
     log?.info?.(
       `AI Card 发送成功: ${targetDesc}, cardInstanceId=${card.cardInstanceId}`,
@@ -767,8 +767,9 @@ export async function sendMediaToDingTalk(params: {
     // 获取文件扩展名作为 fileType
     const fileType = ext || "file";
     
-    // 构建文件信息
+    // 构建文件信息（path 字段用于 sendFileProactive 中 fileName 的 fallback）
     const fileInfo = {
+      path: mediaUrl,
       fileName: fileName,
       fileType: fileType,
     };
@@ -904,7 +905,7 @@ async function sendProactiveInternal(
     try {
       const card = await createAICardForTarget(config, target, externalLog);
       if (card) {
-        await finishAICard(card, content, externalLog);
+        await finishAICard(card, content, config, externalLog);
         return {
           ok: true,
           cardInstanceId: card.cardInstanceId,
@@ -956,7 +957,7 @@ async function sendProactiveInternal(
     }
 
     const body: any = {
-      robotCode: config.clientId,
+      robotCode: String(config.clientId),
       msgKey: payload.msgKey,
       msgParam: JSON.stringify(payload.msgParam),
     };

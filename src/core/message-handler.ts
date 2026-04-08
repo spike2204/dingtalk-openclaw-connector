@@ -49,7 +49,7 @@ import {
   processLocalImages, 
   processVideoMarkers, 
   processAudioMarkers, 
-  processFileMarkers
+  uploadAndReplaceFileMarkers
 } from "../services/media/index.ts";
 import { sendProactive, type AICardTarget } from "../services/messaging/index.ts";
 import { createAICardForTarget, streamAICard, type AICardInstance } from "../services/messaging/card.ts";
@@ -701,7 +701,7 @@ export async function downloadMediaByCode(
 
     const resp = await dingtalkHttp.post(
       `${DINGTALK_API}/v1.0/robot/messageFiles/download`,
-      { downloadCode, robotCode: config.clientId },
+      { downloadCode, robotCode: String(config.clientId) },
       {
         headers: { 'x-acs-dingtalk-access-token': token, 'Content-Type': 'application/json' },
         timeout: 30_000,
@@ -733,7 +733,7 @@ export async function getFileDownloadUrl(
 
     const resp = await dingtalkHttp.post(
       `${DINGTALK_API}/v1.0/robot/messageFiles/download`,
-      { downloadCode, robotCode: config.clientId },
+      { downloadCode, robotCode: String(config.clientId) },
       {
         headers: { 'x-acs-dingtalk-access-token': token, 'Content-Type': 'application/json' },
         timeout: 30_000,
@@ -1513,7 +1513,7 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
             true,  // ✅ 使用主动 API 模式
             mediaTarget
           );
-          finalText = await processFileMarkers(
+          finalText = await uploadAndReplaceFileMarkers(
             finalText,
             '',
             config,

@@ -303,7 +303,7 @@ export async function finishAICard(
     `[DingTalk][AICard] 开始 finish，最终内容长度=${fixedContent.length}`,
   );
 
-  await streamAICard(card, fixedContent, true, log);
+  await streamAICard(card, fixedContent, true, config, log);
 
   const body = {
     outTrackId: card.cardInstanceId,

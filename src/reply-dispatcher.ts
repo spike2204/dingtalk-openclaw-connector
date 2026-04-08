@@ -43,7 +43,7 @@ import {
   processLocalImages,
   processVideoMarkers,
   processAudioMarkers,
-  processFileMarkers,
+  uploadAndReplaceFileMarkers,
 } from "./services/media/index.ts";
 
 
@@ -314,7 +314,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           true,  // ✅ 使用主动 API 模式
           target
         );
-        finalText = await processFileMarkers(
+        finalText = await uploadAndReplaceFileMarkers(
           finalText,
           '',
           account.config as DingtalkConfig,
