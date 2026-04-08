@@ -100,6 +100,21 @@ yarn global add openclaw@latest
 openclaw plugins install @dingtalk-real-ai/dingtalk-connector
 ```
 
+执行安装命令后，会自动触发钉钉一键扫码授权（Device Flow）。
+
+安装过程中，终端会展示：
+
+- 钉钉授权二维码（ASCII）
+- `Authorization URL`（二维码无法显示时可直接打开）
+
+看到 `Success! Bot configured. (机器人配置成功!)` 即表示授权完成。
+
+> 💡 **Windows 扫码提示**：如果在 Windows 设备中无法扫码成功，可能是终端分辨率导致二维码显示异常。建议更换终端使用 [Cmder](https://cmder.app/) 后重试。
+>
+> 💡 **扫码失败不影响安装**：即使扫码流程出现 `auth 失败 / 超时 / 二维码展示失败`，也不影响插件依赖继续下载与安装。安装完成后，请按手动流程完成配置：[`docs/DINGTALK_MANUAL_SETUP.md`](docs/DINGTALK_MANUAL_SETUP.md)
+>
+> 📄 **扫码流程详细说明**：[`docs/DINGTALK_QR_AUTH.md`](docs/DINGTALK_QR_AUTH.md)
+
 #### 方法 B：通过本地源码安装
 
 如果你想对插件进行二次开发，可以先克隆仓库：
@@ -158,75 +173,7 @@ openclaw plugins list
 
 ---
 
-### 步骤 2：创建钉钉机器人
-
-#### 3.1 创建应用
-
-1. 访问 [钉钉开放平台](https://open-dev.dingtalk.com/)
-2. 点击 **"应用开发"**
-
-![创建应用](docs/images/image-1.png)
-
-#### 3.2 添加机器人能力
-
-1. 在应用详情页，点击 一键创建OpenClaw机器人应用
-
-![创建OpenClaw机器人应用](docs/images/image-2.png)
-
-#### 3.3 获取凭证
-
-1. 完成创建并获取 **"凭证与基础信息"**
-2. 复制你的 **AppKey**（Client ID）
-3. 复制你的 **AppSecret**（Client Secret）
-
-![完成创建](docs/images/image-3.png)
-
-![获取凭证](docs/images/image-4.png)
-
-> ⚠️ **重要**：Client ID和 Client Secret是机器人的唯一凭证。请合理保存。
-
----
-
-### 步骤 3：配置 OpenClaw
-
-你有三种方式配置连接器：
-
-#### 方式 A：配置向导（推荐新手使用）
-
-> 你可以直接复制粘贴下面的命令，在终端中运行配置向导。
-
-```bash
-openclaw channels add
-```
-
-选择 **"DingTalk (钉钉)"**，然后按提示输入：
-- `clientId`（AppKey）
-- `clientSecret`（AppSecret）
-
-#### 方式 B：编辑配置文件
-
-编辑配置文件：
-
-- macOS / Linux：`~/.openclaw/openclaw.json`
-- Windows：`C:\Users\<你的用户名>\.openclaw\openclaw.json`
-
-```json
-{
-  "channels": {
-    "dingtalk-connector": {
-      "enabled": true,
-      "clientId": "dingxxxxxxxxx",
-      "clientSecret": "your_app_secret"
-    }
-  }
-}
-```
-
-> 💡 **提示**：如果文件已有内容，在 `channels` 节点下添加 `dingtalk-connector` 部分即可。
-
----
-
-### 步骤 4：重启并测试
+### 步骤 2：重启并测试
 
 ```bash
 # 重启 OpenClaw Gateway
