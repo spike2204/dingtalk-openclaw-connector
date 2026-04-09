@@ -78,7 +78,6 @@ async function deviceAuthFlow() {
   }
   console.log(cyan('Authorization URL: ') + verifyUrl + '\n');
   console.log(dim('Waiting for authorization result...') + '\n');
-
   // 4. poll
   const RETRY_WINDOW = 2 * 60 * 1000; // 2 minutes retry window for transient errors
   const start = Date.now();
@@ -207,7 +206,7 @@ Options:
     console.log(dim(`  Configuration saved to ${getConfigPath()}`) + '\n');
 
     // Step 4: Restart hint
-    console.log('Please restart the gateway to apply changes:\n');
+    console.log(cyan('Please restart the gateway to apply changes:') + '\n');
     console.log(cyan('  openclaw gateway restart') + '\n');
   } catch (err) {
     console.error('\n' + red('❌ Authorization failed: ') + err.message + '\n');
