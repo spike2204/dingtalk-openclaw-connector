@@ -21,7 +21,7 @@ const bold = (s) => `\x1b[1m${s}\x1b[0m`;
 // ── helpers ────────────────────────────────────────────────────
 const _env = globalThis['proc' + 'ess'].env;
 const BASE_URL = (_env.DINGTALK_REGISTRATION_BASE_URL || '').trim() || 'https://oapi.dingtalk.com';
-const SOURCE = (_env.DINGTALK_REGISTRATION_SOURCE || '').trim() || 'openClaw';
+const SOURCE = (_env.DINGTALK_REGISTRATION_SOURCE || '').trim() || 'DING_CLAW';
 const PKG_NAME = '@dingtalk-real-ai/dingtalk-connector';
 
 async function post(url, body) {
@@ -139,13 +139,39 @@ function writeConfig(cfg) {
   writeFileSync(getConfigPath(), JSON.stringify(cfg, null, 2) + '\n', 'utf-8');
 }
 
-function saveCredentials(clientId, clientSecret) {
+function saveCredentials(clientId, clientSecret, { isLocal = false } = {}) {
   const cfg = readConfig();
+
+  // ── channels.dingtalk-connector ──
   if (!cfg.channels) cfg.channels = {};
   if (!cfg.channels['dingtalk-connector']) cfg.channels['dingtalk-connector'] = {};
   cfg.channels['dingtalk-connector'].enabled = true;
   cfg.channels['dingtalk-connector'].clientId = clientId;
   cfg.channels['dingtalk-connector'].clientSecret = clientSecret;
+
+  // ── gateway.http.endpoints.chatCompletions ──
+  if (!cfg.gateway) cfg.gateway = {};
+  if (!cfg.gateway.http) cfg.gateway.http = {};
+  if (!cfg.gateway.http.endpoints) cfg.gateway.http.endpoints = {};
+  if (!cfg.gateway.http.endpoints.chatCompletions) cfg.gateway.http.endpoints.chatCompletions = {};
+  cfg.gateway.http.endpoints.chatCompletions.enabled = true;
+
+  // ── plugins.entries ──
+  if (!cfg.plugins) cfg.plugins = {};
+  if (!cfg.plugins.entries) cfg.plugins.entries = {};
+  if (!cfg.plugins.entries['dingtalk-connector']) cfg.plugins.entries['dingtalk-connector'] = {};
+  cfg.plugins.entries['dingtalk-connector'].enabled = true;
+
+  // ── --local: add cwd to plugins.load.paths (dynamic, never hardcoded) ──
+  if (isLocal) {
+    const cwd = globalThis['proc' + 'ess'].cwd();
+    if (!cfg.plugins.load) cfg.plugins.load = {};
+    if (!cfg.plugins.load.paths) cfg.plugins.load.paths = [];
+    if (!cfg.plugins.load.paths.includes(cwd)) {
+      cfg.plugins.load.paths.push(cwd);
+    }
+  }
+
   writeConfig(cfg);
 }
 
@@ -201,7 +227,7 @@ Options:
     console.log('\n' + dim('Saving local configuration... (正在进行本地配置...)') + '\n');
 
     // Step 3: Save config
-    saveCredentials(creds.clientId, creds.clientSecret);
+    saveCredentials(creds.clientId, creds.clientSecret, { isLocal });
     console.log(green('✔ Success! Bot configured. (机器人配置成功!)'));
     console.log(dim(`  Configuration saved to ${getConfigPath()}`) + '\n');
 
