@@ -176,14 +176,28 @@ function saveCredentials(clientId, clientSecret, { isLocal = false } = {}) {
 }
 
 // ── plugin install ─────────────────────────────────────────────
+function getInstallSpec() {
+  // Read version from own package.json to pass the exact version to openclaw
+  try {
+    const require = createRequire(import.meta.url);
+    const { version } = require('../package.json');
+    if (version && /-(alpha|beta|rc|canary)/.test(version)) {
+      // prerelease → use exact version so openclaw accepts it
+      return `${PKG_NAME}@${version}`;
+    }
+  } catch {}
+  return PKG_NAME;
+}
+
 function installPlugin() {
-  console.log('\n' + cyan(`📦 Installing ${PKG_NAME}...`) + '\n');
+  const spec = getInstallSpec();
+  console.log('\n' + cyan(`📦 Installing ${spec}...`) + '\n');
   const mod = ['child', 'process'].join('_');
   const { execFileSync } = createRequire(import.meta.url)(`node:${mod}`);
   try {
-    execFileSync('openclaw', ['plugins', 'install', PKG_NAME], { stdio: 'inherit' });
+    execFileSync('openclaw', ['plugins', 'install', spec], { stdio: 'inherit' });
   } catch (err) {
-    console.error(red('Plugin install failed.') + ' You can install manually: ' + cyan('openclaw plugins install ' + PKG_NAME));
+    console.error(red('Plugin install failed.') + ' You can install manually: ' + cyan('openclaw plugins install ' + spec));
     globalThis['proc' + 'ess'].exit(1);
   }
 }
