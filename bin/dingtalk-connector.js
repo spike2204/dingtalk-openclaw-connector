@@ -6,13 +6,14 @@ import { fileURLToPath } from 'node:url';
 const mod = ['child', 'process'].join('_');
 const { execFileSync } = createRequire(import.meta.url)(`node:${mod}`);
 
-const args = process.argv.slice(2);
+// Filter out the 'install' subcommand since we already hardcode it below
+const args = process.argv.slice(2).filter((arg) => arg !== 'install');
 
 // Resolve the package root so openclaw can find openclaw.plugin.json
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageRoot = join(__dirname, '..');
 
-// Forward to `openclaw plugin install <packageRoot>` with all user args
+// Forward to `openclaw plugins install <packageRoot>` with remaining user args
 const openclawArgs = ['--yes', '--prefer-online', 'openclaw', 'plugins', 'install', packageRoot, ...args];
 
 try {
