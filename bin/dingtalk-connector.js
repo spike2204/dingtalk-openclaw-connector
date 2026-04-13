@@ -13,7 +13,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageRoot = join(__dirname, '..');
 
 // Forward to `openclaw plugin install <packageRoot>` with all user args
-const openclawArgs = ['--yes', '--prefer-online', 'openclaw', 'plugin', 'install', packageRoot, ...args];
+const openclawArgs = ['--yes', '--prefer-online', 'openclaw', 'plugins', 'install', packageRoot, ...args];
 
 try {
   if (process.platform === 'win32') {
