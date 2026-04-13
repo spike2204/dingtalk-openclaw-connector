@@ -292,9 +292,29 @@ function runDwsAuthLogin() {
   }
 }
 
+function isDwsAuthenticated() {
+  const mod = ['child', 'process'].join('_');
+  const { execSync } = createRequire(import.meta.url)(`node:${mod}`);
+  try {
+    const output = execSync('dws auth status', { stdio: 'pipe', encoding: 'utf-8' });
+    const status = JSON.parse(output);
+    return status.authenticated === true;
+  } catch {
+    return false;
+  }
+}
+
 function ensureDwsCli() {
   if (isDwsInstalled()) {
     console.log(dim('  ✔ dws CLI already installed') + '\n');
+
+    // Check if authenticated — if not, trigger login
+    if (!isDwsAuthenticated()) {
+      console.log(dim('  ⚠ dws CLI installed but not authenticated') + '\n');
+      runDwsAuthLogin();
+    } else {
+      console.log(dim('  ✔ dws CLI authenticated') + '\n');
+    }
     return;
   }
 
