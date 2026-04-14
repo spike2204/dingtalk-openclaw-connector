@@ -1165,6 +1165,28 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
   const normalizedText = normalizeSlashCommand(rawText);
   let userContent = normalizedText || (content.imageUrls.length > 0 ? '请描述这张图片' : '');
 
+  // ===== 养成系统命令拦截 =====
+  try {
+    const { GamificationEngine, isGamificationCommand } = await import('../gamification/index.ts');
+    if (isGamificationCommand(rawText)) {
+      const engine = GamificationEngine.getInstanceForUser(senderId);
+      if (engine.isEnabled()) {
+        const response = engine.handleCommand(rawText);
+        if (response) {
+          log?.info?.(`[DingTalk][Gamification] 处理养成系统命令: ${rawText.slice(0, 20)}`);
+          await sendProactive(config, isDirect ? { userId: senderId } : { openConversationId: data.conversationId }, response, {
+            useAICard: true,
+            fallbackToNormal: true,
+            log,
+          });
+          return;
+        }
+      }
+    }
+  } catch (gamErr: any) {
+    log?.warn?.(`[DingTalk][Gamification] 命令处理失败: ${gamErr?.message || gamErr}`);
+  }
+
   // ===== 图片下载到本地文件 =====
   const imageLocalPaths: string[] = [];
   

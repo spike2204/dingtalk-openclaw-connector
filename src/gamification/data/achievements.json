@@ -1,0 +1,28 @@
+[
+  { "id": "A001", "name": "初出茅庐", "emoji": "🐒", "description": "首次成功调用 dws CLI", "category": "cultivation", "condition": { "type": "totalOperations", "count": 1 }, "expReward": 10 },
+  { "id": "A002", "name": "三天打鱼", "emoji": "🔥", "description": "连续 3 天签到", "category": "cultivation", "condition": { "type": "consecutiveSignIn", "days": 3 }, "expReward": 15 },
+  { "id": "A003", "name": "七七四十九", "emoji": "📅", "description": "连续 49 天签到", "category": "cultivation", "condition": { "type": "consecutiveSignIn", "days": 49 }, "expReward": 200 },
+  { "id": "A004", "name": "十连斩", "emoji": "⚡", "description": "单次连击达到 10 次", "category": "cultivation", "condition": { "type": "maxCombo", "count": 10 }, "expReward": 50 },
+  { "id": "A005", "name": "五行山下", "emoji": "🏔️", "description": "累计 500 次成功调用", "category": "cultivation", "condition": { "type": "totalOperations", "count": 500 }, "expReward": 100 },
+  { "id": "A006", "name": "八十一难", "emoji": "🌋", "description": "累计 81 次 recovery 成功", "category": "cultivation", "condition": { "type": "totalRecoveries", "count": 81 }, "expReward": 300 },
+
+  { "id": "A101", "name": "妖怪猎人", "emoji": "📖", "description": "收服 10 种不同妖怪", "category": "collection", "condition": { "type": "uniqueMonsters", "count": 10 }, "expReward": 30 },
+  { "id": "A102", "name": "半部西游", "emoji": "📚", "description": "收服 24 种不同妖怪", "category": "collection", "condition": { "type": "uniqueMonsters", "count": 24 }, "expReward": 100 },
+  { "id": "A103", "name": "妖魔全书", "emoji": "📜", "description": "收服全部 48 种妖怪", "category": "collection", "condition": { "type": "uniqueMonsters", "count": 48 }, "expReward": 500, "titleReward": "妖魔克星" },
+  { "id": "A104", "name": "闪光猎人", "emoji": "✨", "description": "收服 1 只闪光妖怪", "category": "collection", "condition": { "type": "shinyMonsters", "count": 1 }, "expReward": 200 },
+  { "id": "A105", "name": "闪光大师", "emoji": "🌈", "description": "收服 5 只闪光妖怪", "category": "collection", "condition": { "type": "shinyMonsters", "count": 5 }, "expReward": 500, "titleReward": "欧皇" },
+  { "id": "A106", "name": "全闪通关", "emoji": "👑", "description": "收服 10 只闪光妖怪", "category": "collection", "condition": { "type": "shinyMonsters", "count": 10 }, "expReward": 1000, "titleReward": "天选之人" },
+
+  { "id": "A201", "name": "表格大师", "emoji": "📊", "description": "aitable 相关命令成功 50 次", "category": "product", "condition": { "type": "productUsage", "product": "aitable", "count": 50 }, "expReward": 30 },
+  { "id": "A202", "name": "时间管理者", "emoji": "📅", "description": "calendar 相关命令成功 50 次", "category": "product", "condition": { "type": "productUsage", "product": "calendar", "count": 50 }, "expReward": 30 },
+  { "id": "A203", "name": "群聊达人", "emoji": "💬", "description": "chat 相关命令成功 50 次", "category": "product", "condition": { "type": "productUsage", "product": "chat", "count": 50 }, "expReward": 30 },
+  { "id": "A204", "name": "待办终结者", "emoji": "✅", "description": "todo 相关命令成功 50 次", "category": "product", "condition": { "type": "productUsage", "product": "todo", "count": 50 }, "expReward": 30 },
+  { "id": "A205", "name": "日报之王", "emoji": "📝", "description": "report 连续 30 天提交", "category": "product", "condition": { "type": "consecutiveReport", "days": 30 }, "expReward": 100 },
+  { "id": "A206", "name": "全能战士", "emoji": "🎯", "description": "使用过所有 11 个产品", "category": "product", "condition": { "type": "allProducts" }, "expReward": 200 },
+
+  { "id": "A301", "name": "夜猫子", "emoji": "🌙", "description": "凌晨 2:00-5:00 成功调用", "category": "hidden", "condition": { "type": "nightOwl" }, "expReward": 20 },
+  { "id": "A302", "name": "非酋翻身", "emoji": "🎰", "description": "触发天命保底（100 次未出传说）", "category": "hidden", "condition": { "type": "pityTriggered" }, "expReward": 100, "titleReward": "大器晚成" },
+  { "id": "A303", "name": "屡败屡战", "emoji": "💀", "description": "连续 10 次失败后第 11 次成功", "category": "hidden", "condition": { "type": "consecutiveFailThenSuccess", "failCount": 10 }, "expReward": 50 },
+  { "id": "A304", "name": "屠龙勇士", "emoji": "🐉", "description": "单日收服 3 只稀有及以上妖怪", "category": "hidden", "condition": { "type": "dailyRareOrAbove", "count": 3 }, "expReward": 100 },
+  { "id": "A305", "name": "生日快乐", "emoji": "🎂", "description": "在账号注册日当天使用", "category": "hidden", "condition": { "type": "birthday" }, "expReward": 50 }
+]
