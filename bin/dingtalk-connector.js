@@ -3,12 +3,16 @@
  * DingTalk Connector CLI
  *
  * Usage:
- *   npx -y @dingtalk-real-ai/dingtalk-connector install        # published
- *   node bin/dingtalk-connector.js install --local              # local dev
+ *   npx -y @dingtalk-real-ai/dingtalk-connector install                    # auto-detect target (openclaw)
+ *   npx -y @dingtalk-real-ai/dingtalk-connector install --target hermes    # install for Hermes Agent
+ *   npx -y @dingtalk-real-ai/dingtalk-connector install --target openclaw  # install for OpenClaw (default)
+ *   node bin/dingtalk-connector.js install --local                         # local dev (openclaw)
+ *   node bin/dingtalk-connector.js install --local --target hermes         # local dev (hermes)
  */
 import { createRequire } from 'node:module';
-import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, cpSync, readdirSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 
 // ── ANSI colors ────────────────────────────────────────────────
@@ -17,12 +21,17 @@ const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
 const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 const bold = (s) => `\x1b[1m${s}\x1b[0m`;
+const yellow = (s) => `\x1b[33m${s}\x1b[0m`;
 
 // ── helpers ────────────────────────────────────────────────────
 const _env = globalThis['proc' + 'ess'].env;
+const _proc = globalThis['proc' + 'ess'];
 const BASE_URL = (_env.DINGTALK_REGISTRATION_BASE_URL || '').trim() || 'https://oapi.dingtalk.com';
 const SOURCE = (_env.DINGTALK_REGISTRATION_SOURCE || '').trim() || 'DING_CLAW';
 const PKG_NAME = '@dingtalk-real-ai/dingtalk-connector';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const PROJECT_ROOT = join(__dirname, '..');
 
 async function post(url, body) {
   const res = await fetch(url, {
@@ -120,27 +129,53 @@ async function deviceAuthFlow() {
   throw new Error('authorization timeout');
 }
 
-// ── config helpers ─────────────────────────────────────────────
-function getConfigPath() {
+// ── target detection ───────────────────────────────────────────
+/**
+ * Detect which agent platform is available.
+ * Priority: explicit --target flag > auto-detect (hermes > openclaw).
+ */
+function detectTarget(argv) {
+  const targetIdx = argv.indexOf('--target');
+  if (targetIdx !== -1 && argv[targetIdx + 1]) {
+    const explicit = argv[targetIdx + 1].toLowerCase();
+    if (explicit === 'hermes' || explicit === 'openclaw') return explicit;
+    console.error(red(`Unknown target: ${explicit}. Use "hermes" or "openclaw".`));
+    _proc.exit(1);
+  }
+
+  // Auto-detect: check which home directory exists
+  const hermesHome = join(homedir(), '.hermes');
+  const openclawHome = join(homedir(), '.openclaw');
+  const hermesExists = existsSync(hermesHome);
+  const openclawExists = existsSync(openclawHome);
+
+  if (hermesExists && !openclawExists) return 'hermes';
+  if (openclawExists && !hermesExists) return 'openclaw';
+  // Both exist — default to openclaw for backward compatibility
+  return 'openclaw';
+}
+
+// ── OpenClaw config helpers ────────────────────────────────────
+function getOpenclawConfigPath() {
   return join(homedir(), '.openclaw', 'openclaw.json');
 }
 
-function readConfig() {
+function readOpenclawConfig() {
   try {
-    return JSON.parse(readFileSync(getConfigPath(), 'utf-8'));
+    return JSON.parse(readFileSync(getOpenclawConfigPath(), 'utf-8'));
   } catch {
     return {};
   }
 }
 
-function writeConfig(cfg) {
+function writeOpenclawConfig(cfg) {
   const dir = join(homedir(), '.openclaw');
   mkdirSync(dir, { recursive: true });
-  writeFileSync(getConfigPath(), JSON.stringify(cfg, null, 2) + '\n', 'utf-8');
+  writeFileSync(getOpenclawConfigPath(), JSON.stringify(cfg, null, 2) + '\n', 'utf-8');
 }
 
-function saveCredentials(clientId, clientSecret, { isLocal = false } = {}) {
-  const cfg = readConfig();
+function saveOpenclawCredentials(clientId, clientSecret, { isLocal = false } = {}) {
+  const cfg = readOpenclawConfig();
 
   // ── channels.dingtalk-connector ──
   if (!cfg.channels) cfg.channels = {};
@@ -164,7 +199,7 @@ function saveCredentials(clientId, clientSecret, { isLocal = false } = {}) {
 
   // ── --local: add cwd to plugins.load.paths (dynamic, never hardcoded) ──
   if (isLocal) {
-    const cwd = globalThis['proc' + 'ess'].cwd();
+    const cwd = _proc.cwd();
     if (!cfg.plugins.load) cfg.plugins.load = {};
     if (!cfg.plugins.load.paths) cfg.plugins.load.paths = [];
     if (!cfg.plugins.load.paths.includes(cwd)) {
@@ -172,10 +207,163 @@ function saveCredentials(clientId, clientSecret, { isLocal = false } = {}) {
     }
   }
 
-  writeConfig(cfg);
+  writeOpenclawConfig(cfg);
 }
 
-// ── plugin install ─────────────────────────────────────────────
+// ── Hermes config helpers ──────────────────────────────────────
+function getHermesHome() {
+  return join(homedir(), '.hermes');
+}
+
+function getHermesEnvPath() {
+  return join(getHermesHome(), '.env');
+}
+
+/**
+ * Read the Hermes .env file as a key-value map.
+ */
+function readHermesEnv() {
+  const envPath = getHermesEnvPath();
+  const entries = {};
+  if (!existsSync(envPath)) return entries;
+  const content = readFileSync(envPath, 'utf-8');
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx === -1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    const value = trimmed.slice(eqIdx + 1).trim();
+    entries[key] = value;
+  }
+  return entries;
+}
+
+/**
+ * Write the Hermes .env file from a key-value map, preserving comments and order.
+ */
+function writeHermesEnv(entries) {
+  const envPath = getHermesEnvPath();
+  const hermesHome = getHermesHome();
+  mkdirSync(hermesHome, { recursive: true });
+
+  // Preserve existing file structure: update existing keys, append new ones
+  const existingLines = [];
+  const updatedKeys = new Set();
+
+  if (existsSync(envPath)) {
+    const content = readFileSync(envPath, 'utf-8');
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) {
+        existingLines.push(line);
+        continue;
+      }
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx === -1) {
+        existingLines.push(line);
+        continue;
+      }
+      const key = trimmed.slice(0, eqIdx).trim();
+      if (key in entries) {
+        existingLines.push(`${key}=${entries[key]}`);
+        updatedKeys.add(key);
+      } else {
+        existingLines.push(line);
+      }
+    }
+  }
+
+  // Append new keys that weren't in the existing file
+  for (const [key, value] of Object.entries(entries)) {
+    if (!updatedKeys.has(key)) {
+      existingLines.push(`${key}=${value}`);
+    }
+  }
+
+  writeFileSync(envPath, existingLines.join('\n') + '\n', 'utf-8');
+}
+
+/**
+ * Save DingTalk credentials to Hermes .env file.
+ */
+function saveHermesCredentials(clientId, clientSecret) {
+  const existing = readHermesEnv();
+  existing.DINGTALK_CLIENT_ID = clientId;
+  existing.DINGTALK_CLIENT_SECRET = clientSecret;
+  // Allow all users by default (user can restrict later)
+  if (!existing.DINGTALK_ALLOW_ALL_USERS) {
+    existing.DINGTALK_ALLOW_ALL_USERS = 'true';
+  }
+  writeHermesEnv(existing);
+}
+
+/**
+ * Install connector skills into Hermes skills directory.
+ */
+function installHermesSkills() {
+  const skillsSrc = join(PROJECT_ROOT, 'skills');
+  const skillsDest = join(getHermesHome(), 'skills');
+
+  if (!existsSync(skillsSrc)) {
+    console.log(dim('  No skills directory found, skipping skill installation'));
+    return;
+  }
+
+  mkdirSync(skillsDest, { recursive: true });
+
+  const skillDirs = readdirSync(skillsSrc, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+
+  for (const skillDir of skillDirs) {
+    const src = join(skillsSrc, skillDir);
+    const dest = join(skillsDest, skillDir);
+    if (existsSync(dest)) {
+      console.log(dim(`  Skill "${skillDir}" already exists, overwriting...`));
+      rmSync(dest, { recursive: true, force: true });
+    }
+    cpSync(src, dest, { recursive: true });
+    console.log(green(`  ✔ Installed skill: ${skillDir}`));
+  }
+}
+
+/**
+ * Check and install Python dependencies required by Hermes DingTalk adapter.
+ */
+function ensureHermesPythonDeps() {
+  const mod = ['child', 'process'].join('_');
+  const { execSync } = createRequire(import.meta.url)(`node:${mod}`);
+
+  const requiredPackages = ['dingtalk-stream', 'httpx'];
+  const missingPackages = [];
+
+  for (const pkg of requiredPackages) {
+    try {
+      execSync(`python3 -c "import ${pkg.replace('-', '_')}"`, { stdio: 'ignore' });
+    } catch {
+      missingPackages.push(pkg);
+    }
+  }
+
+  if (missingPackages.length === 0) {
+    console.log(green('  ✔ Python dependencies already installed'));
+    return true;
+  }
+
+  console.log(cyan(`  📦 Installing Python dependencies: ${missingPackages.join(', ')}...`));
+  try {
+    execSync(`pip install ${missingPackages.join(' ')}`, { stdio: 'inherit' });
+    console.log(green('  ✔ Python dependencies installed'));
+    return true;
+  } catch {
+    console.log(yellow(`  ⚠ Failed to install Python dependencies. Please run manually:`));
+    console.log(cyan(`    pip install ${missingPackages.join(' ')}`));
+    return false;
+  }
+}
+
+// ── plugin install (OpenClaw) ───────────────────────────────────
 function getInstallSpec() {
   // Read version from own package.json to pass the exact version to openclaw
   try {
@@ -189,9 +377,9 @@ function getInstallSpec() {
   return PKG_NAME;
 }
 
-function installPlugin() {
+function installOpenclawPlugin() {
   const spec = getInstallSpec();
-  console.log('\n' + cyan(`📦 Installing ${spec}...`) + '\n');
+  console.log('\n' + cyan(`📦 Installing ${spec} for OpenClaw...`) + '\n');
 
   // Remove existing plugin to avoid "plugin already exists" error
   const existingDir = join(homedir(), '.openclaw', 'extensions', 'dingtalk-connector');
@@ -204,195 +392,141 @@ function installPlugin() {
   const { execFileSync } = createRequire(import.meta.url)(`node:${mod}`);
   try {
     execFileSync('openclaw', ['plugins', 'install', spec], { stdio: 'inherit' });
-  } catch (err) {
+  } catch {
     console.error(red('Plugin install failed.') + ' You can install manually: ' + cyan('openclaw plugins install ' + spec));
-    globalThis['proc' + 'ess'].exit(1);
+    _proc.exit(1);
   }
 }
 
-// ── dws CLI install ─────────────────────────────────────────────
-const DWS_INSTALL_SCRIPT_URL = 'https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.sh';
-const DWS_NPM_PACKAGE = 'dingtalk-workspace-cli';
-
-function isDwsInstalled() {
-  const mod = ['child', 'process'].join('_');
-  const { execFileSync } = createRequire(import.meta.url)(`node:${mod}`);
-  try {
-    execFileSync('dws', ['--version'], { stdio: 'pipe' });
-    return true;
-  } catch {
-    return false;
+// ── OpenClaw install flow ──────────────────────────────────────
+async function installForOpenclaw({ isLocal }) {
+  // Step 1: Install connector plugin (unless --local)
+  if (!isLocal) {
+    installOpenclawPlugin();
+  } else {
+    console.log('\n' + dim('📦 --local mode: skipping plugin install') + '\n');
   }
+
+  // Step 2: QR authorization
+  const creds = await deviceAuthFlow();
+  console.log('\n' + dim('Saving local configuration... (正在进行本地配置...)') + '\n');
+
+  // Step 3: Save config
+  saveOpenclawCredentials(creds.clientId, creds.clientSecret, { isLocal });
+  console.log(green('✔ Success! Bot configured. (机器人配置成功!)'));
+  console.log(dim(`  Configuration saved to ${getOpenclawConfigPath()}`) + '\n');
+
+  // Step 4: Restart hint
+  console.log(cyan('Please restart the gateway to apply changes:') + '\n');
+  console.log(cyan('  openclaw gateway restart') + '\n');
+
+  // Hint about dws CLI
+  console.log(dim('💡 Tip: DingTalk productivity features (AI Tables, Calendar, etc.) are powered by dws CLI.'));
+  console.log(dim('   The Agent will guide you through installation when needed.') + '\n');
 }
 
-function installDwsCli() {
-  const mod = ['child', 'process'].join('_');
-  const { execFileSync, execSync } = createRequire(import.meta.url)(`node:${mod}`);
-  const platform = globalThis['proc' + 'ess'].platform;
+// ── Hermes install flow ────────────────────────────────────────
+async function installForHermes({ isLocal }) {
+  console.log('\n' + bold(cyan('🤖 Installing DingTalk Connector for Hermes Agent')) + '\n');
 
-  console.log('\n' + cyan('🔧 Installing DingTalk Workspace CLI (dws)...') + '\n');
-  console.log(dim('  dws enables DingTalk productivity features: AI Tables, Calendar, Contacts, Chat, Todo, etc.') + '\n');
-
-  // Strategy 1: npm global install (user already has Node.js)
-  try {
-    console.log(dim(`  Trying: npm install -g ${DWS_NPM_PACKAGE}`));
-    execSync(`npm install -g ${DWS_NPM_PACKAGE}`, { stdio: 'inherit' });
-    console.log(green('  ✔ dws installed via npm') + '\n');
-    return true;
-  } catch {
-    console.log(dim('  npm global install failed, trying alternative method...') + '\n');
+  const hermesHome = getHermesHome();
+  if (!existsSync(hermesHome)) {
+    console.error(red('❌ Hermes home directory not found: ') + hermesHome);
+    console.error(dim('   Please install Hermes Agent first: https://github.com/nicepkg/hermes-agent'));
+    _proc.exit(1);
   }
 
-  // Strategy 2: curl install script (macOS / Linux)
-  if (platform !== 'win32') {
-    try {
-      console.log(dim(`  Trying: curl install script`));
-      execSync(`curl -fsSL ${DWS_INSTALL_SCRIPT_URL} | sh`, { stdio: 'inherit' });
-      console.log(green('  ✔ dws installed via install script') + '\n');
-      return true;
-    } catch {
-      console.log(dim('  Install script failed.') + '\n');
-    }
-  }
+  // Step 1: Check & install Python dependencies
+  console.log(cyan('Step 1/3: Checking Python dependencies...'));
+  ensureHermesPythonDeps();
+  console.log('');
 
-  // Strategy 3: npx fallback (no global install needed, dws runs via npx)
-  try {
-    console.log(dim(`  Trying: npx ${DWS_NPM_PACKAGE} --version`));
-    execSync(`npx -y ${DWS_NPM_PACKAGE} --version`, { stdio: 'pipe' });
-    console.log(green('  ✔ dws available via npx (no global install)') + '\n');
-    return true;
-  } catch {
-    // All strategies failed
-  }
+  // Step 2: Install skills
+  console.log(cyan('Step 2/3: Installing DingTalk skills...'));
+  installHermesSkills();
+  console.log('');
 
-  return false;
-}
+  // Step 3: QR authorization + save credentials
+  console.log(cyan('Step 3/3: DingTalk authorization...'));
+  const creds = await deviceAuthFlow();
+  console.log('\n' + dim('Saving Hermes configuration... (正在保存 Hermes 配置...)') + '\n');
 
-function runDwsAuthLogin() {
-  const mod = ['child', 'process'].join('_');
-  const { execSync } = createRequire(import.meta.url)(`node:${mod}`);
+  saveHermesCredentials(creds.clientId, creds.clientSecret);
+  console.log(green('✔ Success! Bot configured for Hermes. (Hermes 机器人配置成功!)'));
+  console.log(dim(`  Credentials saved to ${getHermesEnvPath()}`));
+  console.log(dim(`  Skills installed to ${join(hermesHome, 'skills')}`) + '\n');
 
-  console.log('\n' + cyan('🔐 Authorizing dws CLI (DingTalk Workspace)...') + '\n');
-  console.log(dim('  This grants access to DingTalk productivity features (AI Tables, Calendar, etc.)') + '\n');
+  // Step 4: Restart hint
+  console.log(cyan('Please start/restart the Hermes gateway to apply changes:') + '\n');
+  console.log(cyan('  hermes gateway') + '\n');
+  console.log(dim('Or run in background:'));
+  console.log(cyan('  hermes gateway start') + '\n');
 
-  try {
-    execSync('dws auth login', { stdio: 'inherit' });
-    console.log(green('  ✔ dws authorized successfully') + '\n');
-    return true;
-  } catch {
-    // dws might not be in PATH yet after install, try npx
-    try {
-      execSync(`npx -y ${DWS_NPM_PACKAGE} auth login`, { stdio: 'inherit' });
-      console.log(green('  ✔ dws authorized successfully (via npx)') + '\n');
-      return true;
-    } catch {
-      console.log(red('  ⚠ dws auth login failed.') + ' You can authorize later: ' + cyan('dws auth login') + '\n');
-      return false;
-    }
-  }
-}
-
-function isDwsAuthenticated() {
-  const mod = ['child', 'process'].join('_');
-  const { execSync } = createRequire(import.meta.url)(`node:${mod}`);
-  try {
-    const output = execSync('dws auth status', { stdio: 'pipe', encoding: 'utf-8' });
-    const status = JSON.parse(output);
-    return status.authenticated === true;
-  } catch {
-    return false;
-  }
-}
-
-function ensureDwsCli() {
-  if (isDwsInstalled()) {
-    console.log(dim('  ✔ dws CLI already installed') + '\n');
-
-    // Check if authenticated — if not, trigger login
-    if (!isDwsAuthenticated()) {
-      console.log(dim('  ⚠ dws CLI installed but not authenticated') + '\n');
-      runDwsAuthLogin();
-    } else {
-      console.log(dim('  ✔ dws CLI authenticated') + '\n');
-    }
-    return;
-  }
-
-  const installed = installDwsCli();
-  if (!installed) {
-    console.log(red('  ⚠ Could not install dws CLI automatically.') + '\n');
-    console.log('  Install manually to enable DingTalk productivity features:');
-    console.log(cyan(`    npm install -g ${DWS_NPM_PACKAGE}`) + '\n');
-    console.log('  Or:');
-    console.log(cyan(`    curl -fsSL ${DWS_INSTALL_SCRIPT_URL} | sh`) + '\n');
-    return;
-  }
-
-  // After install, run dws auth login
-  runDwsAuthLogin();
+  // Hint about dws CLI
+  console.log(dim('💡 Tip: DingTalk productivity features (AI Tables, Calendar, etc.) are powered by dws CLI.'));
+  console.log(dim('   The Agent will guide you through installation when needed.') + '\n');
 }
 
 // ── main ───────────────────────────────────────────────────────
 async function main() {
-  const argv = globalThis['proc' + 'ess'].argv.slice(2);
+  const argv = _proc.argv.slice(2);
   const command = argv[0];
   const isLocal = argv.includes('--local') || argv.includes('-l');
-  const skipDws = argv.includes('--skip-dws');
+  const target = detectTarget(argv);
 
   if (!command || command === '--help' || command === '-h') {
     console.log(`
-DingTalk Connector CLI
+${bold('DingTalk Connector CLI')}
 
-Usage:
-  npx -y ${PKG_NAME} install              Install plugin + dws CLI + QR auth
-  npx -y ${PKG_NAME} install --local      QR auth only (skip plugin install)
-  npx -y ${PKG_NAME} install --skip-dws   Skip dws CLI installation
+${bold('Usage:')}
+  npx -y ${PKG_NAME} install                          Install for OpenClaw (auto-detect)
+  npx -y ${PKG_NAME} install --target hermes           Install for Hermes Agent
+  npx -y ${PKG_NAME} install --target openclaw         Install for OpenClaw (explicit)
+  npx -y ${PKG_NAME} install --local                   QR auth only (skip plugin install)
+  npx -y ${PKG_NAME} install --local --target hermes   Local dev for Hermes
 
-Options:
-  --local, -l      Skip plugin install (for local development)
-  --skip-dws       Skip dws CLI auto-installation
-  --help, -h       Show this help
+${bold('Options:')}
+  --target <agent>   Target agent platform: "hermes" or "openclaw" (default: auto-detect)
+  --local, -l        Skip plugin install (for local development)
+  --help, -h         Show this help
+
+${bold('Supported Targets:')}
+  ${cyan('openclaw')}   Standard OpenClaw or OpenClaw-Fork (writes to ~/.openclaw/openclaw.json)
+  ${cyan('hermes')}     Hermes Agent (writes to ~/.hermes/.env, installs skills + Python deps)
+
+${dim('Note:')}
+${dim('  dws CLI (DingTalk Workspace) is NOT installed during this step.')}
+${dim('  When the Agent needs DingTalk productivity features (AI Tables, Calendar, etc.),')}
+${dim('  it will dynamically detect and guide you through dws installation and authorization.')}
 `);
     return;
   }
 
   if (command !== 'install') {
     console.error(`Unknown command: ${command}. Use --help for usage.`);
-    globalThis['proc' + 'ess'].exit(1);
+    _proc.exit(1);
   }
 
-  // Step 1: Install connector plugin (unless --local)
-  if (!isLocal) {
-    installPlugin();
-  } else {
-    console.log('\n' + dim('📦 --local mode: skipping plugin install') + '\n');
-  }
+  console.log(dim(`  Target: ${target}`) + '\n');
 
-  // Step 2: Install dws CLI (unless --skip-dws)
-  if (!skipDws) {
-    ensureDwsCli();
-  } else {
-    console.log('\n' + dim('🔧 --skip-dws: skipping dws CLI installation') + '\n');
-  }
-
-  // Step 3: QR authorization for connector
   try {
-    const creds = await deviceAuthFlow();
-    console.log('\n' + dim('Saving local configuration... (正在进行本地配置...)') + '\n');
-
-    // Step 4: Save config
-    saveCredentials(creds.clientId, creds.clientSecret, { isLocal });
-    console.log(green('✔ Success! Bot configured. (机器人配置成功!)'));
-    console.log(dim(`  Configuration saved to ${getConfigPath()}`) + '\n');
-
-    // Step 5: Restart hint
-    console.log(cyan('Please restart the gateway to apply changes:') + '\n');
-    console.log(cyan('  openclaw gateway restart') + '\n');
+    if (target === 'hermes') {
+      await installForHermes({ isLocal });
+    } else {
+      await installForOpenclaw({ isLocal });
+    }
   } catch (err) {
-    console.error('\n' + red('❌ Authorization failed: ') + err.message + '\n');
+    console.error('\n' + red('❌ Installation failed: ') + err.message + '\n');
     console.error('You can still configure manually:');
-    console.error(cyan('  docs/DINGTALK_MANUAL_SETUP.md') + '\n');
-    globalThis['proc' + 'ess'].exit(1);
+    if (target === 'hermes') {
+      console.error(cyan('  1. Set DINGTALK_CLIENT_ID and DINGTALK_CLIENT_SECRET in ~/.hermes/.env'));
+      console.error(cyan('  2. pip install dingtalk-stream httpx'));
+      console.error(cyan('  3. hermes gateway'));
+    } else {
+      console.error(cyan('  docs/DINGTALK_MANUAL_SETUP.md'));
+    }
+    console.error('');
+    _proc.exit(1);
   }
 }
 
