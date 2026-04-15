@@ -339,6 +339,27 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         log.warn(`[DingTalk][closeStreaming] oapiToken 为空，跳过媒体处理`);
       }
 
+      // ===== 养成系统：检测 dws 命令执行结果并追加掉落渲染 =====
+      try {
+        const dwsProductMatch = finalText.match(/(?:^|\n)\s*(?:>?\s*)?(?:`\s*)?dws\s+(aitable|calendar|chat|contact|todo|approval|attendance|report|ding|workbench|devdoc)\b/m);
+        const hasDwsSuccess = dwsProductMatch && !finalText.includes('command not found: dws') && !finalText.includes('请先执行 dws login');
+        
+        if (hasDwsSuccess) {
+          const dwsProduct = dwsProductMatch[1];
+          const { GamificationEngine } = await import('./gamification/index.ts');
+          const engine = GamificationEngine.getInstanceForUser(senderId);
+          if (engine.isEnabled()) {
+            const gamificationBlock = engine.onDwsCommandResult(dwsProduct, true, dwsProductMatch[0]);
+            if (gamificationBlock) {
+              finalText += '\n' + gamificationBlock;
+              log.info(`[DingTalk][closeStreaming] ✅ 养成系统渲染已追加，产品=${dwsProduct}`);
+            }
+          }
+        }
+      } catch (gamErr: any) {
+        log.warn(`[DingTalk][closeStreaming] 养成系统处理失败（不影响主流程）: ${gamErr?.message || gamErr}`);
+      }
+
       log.info(`[DingTalk][closeStreaming] 准备调用 finishAICard，文本长度=${finalText.length}`);
       await finishAICard(
         cardSnapshot as any,
