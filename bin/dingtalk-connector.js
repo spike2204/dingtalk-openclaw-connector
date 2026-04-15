@@ -210,6 +210,25 @@ function installPlugin() {
   }
 }
 
+// ── DWS environment variables ────────────────────────────────────
+// dws CLI requires DWS_CHANNEL and DWS_CHANNEL_CLIENT_ID to identify
+// the calling context (openclaw connector) and the DingTalk app.
+function getDwsEnv(clientId) {
+  return {
+    ..._env,
+    DWS_CHANNEL: 'openclaw',
+    ...(clientId ? { DWS_CHANNEL_CLIENT_ID: String(clientId) } : {}),
+  };
+}
+
+function injectDwsEnvVars(clientId) {
+  _env.DWS_CHANNEL = 'openclaw';
+  if (clientId) {
+    _env.DWS_CHANNEL_CLIENT_ID = String(clientId);
+  }
+  console.log(dim('  ✔ DWS environment variables injected (DWS_CHANNEL=openclaw)') + '\n');
+}
+
 // ── dws CLI install ─────────────────────────────────────────────
 const DWS_INSTALL_SCRIPT_URL = 'https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.sh';
 const DWS_NPM_PACKAGE = 'dingtalk-workspace-cli';
@@ -382,6 +401,10 @@ Options:
 
     // Step 4: Save config
     saveCredentials(creds.clientId, creds.clientSecret, { isLocal });
+
+    // Step 4.1: Inject DWS environment variables for dws CLI integration
+    injectDwsEnvVars(creds.clientId);
+
     console.log(green('✔ Success! Bot configured. (机器人配置成功!)'));
     console.log(dim(`  Configuration saved to ${getConfigPath()}`) + '\n');
 

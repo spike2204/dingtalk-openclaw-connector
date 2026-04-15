@@ -16,6 +16,9 @@ cli_version: ">=1.0.6"
 
 1. **安装检查**：执行 `dws --version`，确认版本 >= 1.0.6
 2. **授权检查**：执行 `dws auth status`，确认已登录
+3. **环境变量**：connector 运行时会自动注入以下环境变量，dws CLI 会自动读取，无需手动设置：
+   - `DWS_CHANNEL=openclaw` — 标识调用来源为 openclaw connector
+   - `DWS_CHANNEL_CLIENT_ID=<clientId>` — 当前钉钉应用的 Client ID
 
 如果 CLI 未安装或未授权，请引导用户完成对应操作（详见下方错误处理章节）。
 

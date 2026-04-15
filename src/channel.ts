@@ -440,9 +440,18 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
         }
       }
 
+      // Inject DWS environment variables so that openclaw Shell Executor
+      // passes them to dws CLI when agent generates shell commands.
+      // DWS_CHANNEL identifies the calling context (openclaw connector).
+      // DWS_CHANNEL_CLIENT_ID tells dws which DingTalk app is active.
+      process.env.DWS_CHANNEL = "openclaw";
+      if (account.clientId) {
+        process.env.DWS_CHANNEL_CLIENT_ID = String(account.clientId);
+      }
+
       ctx.setStatus({ accountId: ctx.accountId, port: null });
       ctx.log?.info(
-        `starting dingtalk-connector[${ctx.accountId}] (mode: stream)`,
+        `starting dingtalk-connector[${ctx.accountId}] (mode: stream, DWS_CHANNEL=openclaw, DWS_CHANNEL_CLIENT_ID=${account.clientId ? String(account.clientId).substring(0, 8) + '...' : 'N/A'})`,
       );
 
       // 把 ctx.setStatus 包装成 onStatusChange 回调，传入连接层，
