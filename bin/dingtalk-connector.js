@@ -324,15 +324,17 @@ function isDwsAuthenticated() {
 }
 
 function ensureDwsCli() {
+  // Install phase: only ensure dws CLI is installed.
+  // dws auth login is NOT triggered here — it should be deferred to
+  // Agent runtime when the agent actually invokes a dws command and
+  // discovers the user is not authenticated.
   if (isDwsInstalled()) {
     console.log(dim('  ✔ dws CLI already installed') + '\n');
-
-    // Check if authenticated — if not, trigger login
-    if (!isDwsAuthenticated()) {
-      console.log(dim('  ⚠ dws CLI installed but not authenticated') + '\n');
-      runDwsAuthLogin();
-    } else {
+    if (isDwsAuthenticated()) {
       console.log(dim('  ✔ dws CLI authenticated') + '\n');
+    } else {
+      console.log(dim('  ℹ dws CLI not yet authenticated. Authorization will be triggered when Agent uses dws features.') + '\n');
+      console.log(dim('    You can also authorize manually anytime: ') + cyan('dws auth login') + '\n');
     }
     return;
   }
@@ -347,8 +349,8 @@ function ensureDwsCli() {
     return;
   }
 
-  // After install, run dws auth login
-  runDwsAuthLogin();
+  console.log(dim('  ℹ dws CLI installed. Authorization will be triggered when Agent uses dws features.') + '\n');
+  console.log(dim('    You can also authorize manually anytime: ') + cyan('dws auth login') + '\n');
 }
 
 // ── main ───────────────────────────────────────────────────────
