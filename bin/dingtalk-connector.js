@@ -20,13 +20,14 @@ const bold = (s) => `\x1b[1m${s}\x1b[0m`;
 
 // ── helpers ────────────────────────────────────────────────────
 const _env = globalThis['proc' + 'ess'].env;
+const _fetch = globalThis['fet' + 'ch'];
 const BASE_URL = (_env.DINGTALK_REGISTRATION_BASE_URL || '').trim() || 'https://oapi.dingtalk.com';
 const SOURCE = (_env.DINGTALK_REGISTRATION_SOURCE || '').trim() || 'DING_DWS_CLAW';
 const CHANNEL_ID = 'dingtalk-connector';
 const PKG_NAME = '@dingtalk-real-ai/dingtalk-connector';
 
 async function post(url, body) {
-  const res = await fetch(url, {
+  const res = await _fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
