@@ -211,17 +211,17 @@ function installPlugin() {
 }
 
 // ── DWS environment variables ────────────────────────────────────
-// dws CLI requires DWS_CHANNEL, DWS_CLIENT_ID, and DWS_CLIENT_SECRET
+// dws CLI requires DINGTALK_AGENT, DWS_CLIENT_ID, and DWS_CLIENT_SECRET
 // to identify the calling context and the DingTalk app credentials.
 function injectDwsEnvVars(clientId, clientSecret) {
-  _env.DWS_CHANNEL = 'openclaw';
+  _env.DINGTALK_AGENT = 'openclaw';
   if (clientId) {
     _env.DWS_CLIENT_ID = String(clientId);
   }
   if (clientSecret) {
     _env.DWS_CLIENT_SECRET = String(clientSecret);
   }
-  console.log(dim('  ✔ DWS environment variables injected (DWS_CHANNEL=openclaw)') + '\n');
+  console.log(dim('  ✔ DWS environment variables injected (DINGTALK_AGENT=openclaw)') + '\n');
 }
 
 // ── dws CLI install ─────────────────────────────────────────────
