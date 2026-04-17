@@ -139,15 +139,63 @@ function writeConfig(cfg) {
   writeFileSync(getConfigPath(), JSON.stringify(cfg, null, 2) + '\n', 'utf-8');
 }
 
-function saveCredentials(clientId, clientSecret, { isLocal = false } = {}) {
+// ── staging file helpers ───────────────────────────────────────
+// When plugin install fails, credentials are saved to a separate staging file
+// (NOT in openclaw.json, which would cause "Unrecognized key" validation errors).
+// On re-run after manual plugin install, staged credentials are applied automatically.
+function getStagingPath() {
+  return join(homedir(), '.openclaw', '.dingtalk-staging.json');
+}
+
+function readStaging() {
+  try {
+    return JSON.parse(readFileSync(getStagingPath(), 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+function writeStaging(clientId, clientSecret) {
+  const dir = join(homedir(), '.openclaw');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(getStagingPath(), JSON.stringify({ clientId, clientSecret }, null, 2) + '\n', 'utf-8');
+}
+
+function clearStaging() {
+  try {
+    if (existsSync(getStagingPath())) rmSync(getStagingPath());
+  } catch {}
+}
+
+function saveCredentials(clientId, clientSecret, { isLocal = false, pluginInstalled = true } = {}) {
   const cfg = readConfig();
 
-  // ── channels.dingtalk-connector ──
-  if (!cfg.channels) cfg.channels = {};
-  if (!cfg.channels['dingtalk-connector']) cfg.channels['dingtalk-connector'] = {};
-  cfg.channels['dingtalk-connector'].enabled = true;
-  cfg.channels['dingtalk-connector'].clientId = clientId;
-  cfg.channels['dingtalk-connector'].clientSecret = clientSecret;
+  // Only write channel + plugin entries when plugin is actually installed or in local mode.
+  // Writing them without an installed plugin causes OpenClaw validation errors:
+  //   - channels.dingtalk-connector: unknown channel id
+  //   - plugins.allow: plugin not found
+  const writePluginEntries = pluginInstalled || isLocal;
+
+  if (writePluginEntries) {
+    // ── channels.dingtalk-connector ──
+    if (!cfg.channels) cfg.channels = {};
+    if (!cfg.channels['dingtalk-connector']) cfg.channels['dingtalk-connector'] = {};
+    cfg.channels['dingtalk-connector'].enabled = true;
+    cfg.channels['dingtalk-connector'].clientId = clientId;
+    cfg.channels['dingtalk-connector'].clientSecret = clientSecret;
+
+    // ── plugins.entries ──
+    if (!cfg.plugins) cfg.plugins = {};
+    if (!cfg.plugins.entries) cfg.plugins.entries = {};
+    if (!cfg.plugins.entries['dingtalk-connector']) cfg.plugins.entries['dingtalk-connector'] = {};
+    cfg.plugins.entries['dingtalk-connector'].enabled = true;
+
+    // Clean up staging file since credentials are now in the real config
+    clearStaging();
+  } else {
+    // Plugin not installed: save to separate staging file to avoid polluting openclaw.json
+    writeStaging(clientId, clientSecret);
+  }
 
   // ── gateway.http.endpoints.chatCompletions ──
   if (!cfg.gateway) cfg.gateway = {};
@@ -156,17 +204,12 @@ function saveCredentials(clientId, clientSecret, { isLocal = false } = {}) {
   if (!cfg.gateway.http.endpoints.chatCompletions) cfg.gateway.http.endpoints.chatCompletions = {};
   cfg.gateway.http.endpoints.chatCompletions.enabled = true;
 
-  // ── plugins.entries ──
-  if (!cfg.plugins) cfg.plugins = {};
-  if (!cfg.plugins.entries) cfg.plugins.entries = {};
-  if (!cfg.plugins.entries['dingtalk-connector']) cfg.plugins.entries['dingtalk-connector'] = {};
-  cfg.plugins.entries['dingtalk-connector'].enabled = true;
-
   // ── --local: add cwd to plugins.load.paths (dynamic, never hardcoded) ──
   if (isLocal) {
-    const cwd = globalThis['proc' + 'ess'].cwd();
+    if (!cfg.plugins) cfg.plugins = {};
     if (!cfg.plugins.load) cfg.plugins.load = {};
     if (!cfg.plugins.load.paths) cfg.plugins.load.paths = [];
+    const cwd = globalThis['proc' + 'ess'].cwd();
     if (!cfg.plugins.load.paths.includes(cwd)) {
       cfg.plugins.load.paths.push(cwd);
     }
@@ -200,14 +243,62 @@ function installPlugin() {
     rmSync(existingDir, { recursive: true, force: true });
   }
 
+  // Clean stale config entries that would cause "unknown channel id" validation error
+  // (e.g. from a previous run where saveCredentials wrote config but plugin install failed)
+  const cfg = readConfig();
+  let cfgDirty = false;
+  if (cfg.channels?.['dingtalk-connector']) {
+    delete cfg.channels['dingtalk-connector'];
+    cfgDirty = true;
+  }
+  if (cfg.plugins?.entries?.['dingtalk-connector']) {
+    delete cfg.plugins.entries['dingtalk-connector'];
+    cfgDirty = true;
+  }
+  // Also clean plugins.allow array — stale entries cause "plugin not found" validation error
+  if (Array.isArray(cfg.plugins?.allow)) {
+    const idx = cfg.plugins.allow.indexOf('dingtalk-connector');
+    if (idx !== -1) {
+      cfg.plugins.allow.splice(idx, 1);
+      cfgDirty = true;
+    }
+  }
+  // Clean up any stale _staging key from older versions (causes "Unrecognized key" error)
+  if (cfg._staging) {
+    delete cfg._staging;
+    cfgDirty = true;
+  }
+  if (cfgDirty) {
+    console.log(dim('  Cleaning stale config entries before install...'));
+    writeConfig(cfg);
+  }
+
   const mod = ['child', 'process'].join('_');
   const { execFileSync } = createRequire(import.meta.url)(`node:${mod}`);
-  try {
-    execFileSync('openclaw', ['plugins', 'install', spec], { stdio: 'inherit' });
-  } catch (err) {
-    console.error(red('Plugin install failed.') + ' You can install manually: ' + cyan('openclaw plugins install ' + spec));
-    globalThis['proc' + 'ess'].exit(1);
+
+  // Retry with backoff to handle ClawHub 429 rate limiting
+  const MAX_RETRIES = 3;
+  const BACKOFF = [0, 15, 30]; // seconds to wait before each attempt
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    if (BACKOFF[attempt] > 0) {
+      console.log(dim(`  Rate limited. Retrying in ${BACKOFF[attempt]}s... (attempt ${attempt + 1}/${MAX_RETRIES})`) + '\n');
+      // Synchronous sleep — Atomics.wait is cross-platform (no 'sleep' cmd on Windows)
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, BACKOFF[attempt] * 1000);
+    }
+    try {
+      execFileSync('openclaw', ['plugins', 'install', spec], { stdio: 'inherit' });
+      return true;
+    } catch (err) {
+      const errMsg = String(err.stderr || err.stdout || err.message || '');
+      const is429 = errMsg.includes('429') || errMsg.includes('Rate limit') || errMsg.includes('rate limit');
+      if (is429 && attempt < MAX_RETRIES - 1) continue;
+      console.error('\n' + red('⚠ Plugin install failed.') + ' Continuing with QR authorization...\n');
+      console.error(dim('  You can install the plugin manually later:'));
+      console.error(cyan('  openclaw plugins install ' + spec) + '\n');
+      return false;
+    }
   }
+  return false; // unreachable, but satisfies linters
 }
 
 // ── DWS environment variables ────────────────────────────────────
@@ -282,30 +373,6 @@ function installDwsCli() {
   return false;
 }
 
-function runDwsAuthLogin() {
-  const mod = ['child', 'process'].join('_');
-  const { execSync } = createRequire(import.meta.url)(`node:${mod}`);
-
-  console.log('\n' + cyan('🔐 Authorizing dws CLI (DingTalk Workspace)...') + '\n');
-  console.log(dim('  This grants access to DingTalk productivity features (AI Tables, Calendar, etc.)') + '\n');
-
-  try {
-    execSync('dws auth login', { stdio: 'inherit' });
-    console.log(green('  ✔ dws authorized successfully') + '\n');
-    return true;
-  } catch {
-    // dws might not be in PATH yet after install, try npx
-    try {
-      execSync(`npx -y ${DWS_NPM_PACKAGE} auth login`, { stdio: 'inherit' });
-      console.log(green('  ✔ dws authorized successfully (via npx)') + '\n');
-      return true;
-    } catch {
-      console.log(red('  ⚠ dws auth login failed.') + ' You can authorize later: ' + cyan('dws auth login') + '\n');
-      return false;
-    }
-  }
-}
-
 function isDwsAuthenticated() {
   const mod = ['child', 'process'].join('_');
   const { execSync } = createRequire(import.meta.url)(`node:${mod}`);
@@ -319,10 +386,6 @@ function isDwsAuthenticated() {
 }
 
 function ensureDwsCli() {
-  // Install phase: only ensure dws CLI is installed.
-  // dws auth login is NOT triggered here — it should be deferred to
-  // Agent runtime when the agent actually invokes a dws command and
-  // discovers the user is not authenticated.
   if (isDwsInstalled()) {
     console.log(dim('  ✔ dws CLI already installed') + '\n');
     if (isDwsAuthenticated()) {
@@ -378,8 +441,9 @@ Options:
   }
 
   // Step 1: Install connector plugin (unless --local)
+  let pluginInstalled = true;
   if (!isLocal) {
-    installPlugin();
+    pluginInstalled = installPlugin();
   } else {
     console.log('\n' + dim('📦 --local mode: skipping plugin install') + '\n');
   }
@@ -391,23 +455,44 @@ Options:
     console.log('\n' + dim('🔧 --skip-dws: skipping dws CLI installation') + '\n');
   }
 
-  // Step 3: QR authorization for connector
+  // Step 3: Check for staged credentials from a previous failed install
+  const staged = readStaging();
+  if (staged?.clientId && staged?.clientSecret && pluginInstalled) {
+    console.log('\n' + dim('Found staged credentials from previous authorization.') + '\n');
+    console.log(dim('Saving local configuration... (正在进行本地配置...)') + '\n');
+    saveCredentials(staged.clientId, staged.clientSecret, { isLocal, pluginInstalled });
+    injectDwsEnvVars(staged.clientId, staged.clientSecret);
+    console.log(green('✔ Success! Bot configured. (机器人配置成功!)'));
+    console.log(dim(`  Configuration saved to ${getConfigPath()}`) + '\n');
+    console.log(cyan('Please restart the gateway to apply changes:') + '\n');
+    console.log(cyan('  openclaw gateway restart') + '\n');
+    return;
+  }
+
+  // Step 4: QR authorization
   try {
     const creds = await deviceAuthFlow();
     console.log('\n' + dim('Saving local configuration... (正在进行本地配置...)') + '\n');
 
-    // Step 4: Save config
-    saveCredentials(creds.clientId, creds.clientSecret, { isLocal });
+    // Step 5: Save config
+    saveCredentials(creds.clientId, creds.clientSecret, { isLocal, pluginInstalled });
 
-    // Step 4.1: Inject DWS environment variables for dws CLI integration
+    // Step 5.1: Inject DWS environment variables for dws CLI integration
     injectDwsEnvVars(creds.clientId, creds.clientSecret);
 
     console.log(green('✔ Success! Bot configured. (机器人配置成功!)'));
     console.log(dim(`  Configuration saved to ${getConfigPath()}`) + '\n');
 
-    // Step 5: Restart hint
-    console.log(cyan('Please restart the gateway to apply changes:') + '\n');
-    console.log(cyan('  openclaw gateway restart') + '\n');
+    // Step 6: Post-install guidance
+    if (!pluginInstalled && !isLocal) {
+      console.log(red('⚠ Plugin was not installed.') + ' Credentials saved for later.\n');
+      console.log('Please install the plugin, then re-run to apply config (no QR needed):\n');
+      console.log(cyan('  openclaw plugins install ' + getInstallSpec()));
+      console.log(cyan('  npx -y ' + PKG_NAME + ' install') + '\n');
+    } else {
+      console.log(cyan('Please restart the gateway to apply changes:') + '\n');
+      console.log(cyan('  openclaw gateway restart') + '\n');
+    }
   } catch (err) {
     console.error('\n' + red('❌ Authorization failed: ') + err.message + '\n');
     console.error('You can still configure manually:');

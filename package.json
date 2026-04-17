@@ -1,6 +1,6 @@
 {
   "name": "@dingtalk-real-ai/dingtalk-connector",
-  "version": "0.8.14-beta.4",
+  "version": "0.8.16",
   "description": "DingTalk (钉钉) channel connector — Stream mode with AI Card streaming",
   "type": "module",
   "exports": {
@@ -59,11 +59,21 @@
     "validate": "npm run lint && npm run type-check && npm run version:check"
   },
   "keywords": [
+    "openclaw",
+    "openclaw-plugin",
     "dingtalk",
+    "dingtalk-bot",
+    "dingtalk-stream",
+    "钉钉",
+    "钉钉机器人",
     "channel",
-    "stream",
     "ai-card",
-    "connector"
+    "ai-agent",
+    "multi-agent",
+    "streaming",
+    "chatbot",
+    "connector",
+    "deap-agent"
   ],
   "author": "DingTalk Real Team",
   "license": "MIT",
@@ -93,6 +103,30 @@
     "openclaw": {
       "optional": true
     }
+  },
+  "openclaw": {
+    "channels": [
+      "dingtalk-connector"
+    ],
+    "extensions": [
+      "./index.ts"
+    ],
+    "channel": {
+      "id": "dingtalk-connector",
+      "label": "DingTalk",
+      "selectionLabel": "DingTalk (钉钉)",
+      "blurb": "Official DingTalk plugin with AI Card streaming & multi-agent routing | 钉钉官方插件，支持 AI Card 流式响应与多 Agent 路由",
+      "aliases": [
+        "dingtalk",
+        "钉钉"
+      ],
+      "order": 33,
+      "quickstartAllowFrom": true
+    },
+    "install": {
+      "npmSpec": "@dingtalk-real-ai/dingtalk-connector"
+    },
+    "installDependencies": true
   },
   "devDependencies": {
     "@types/node": "^20.19.37",

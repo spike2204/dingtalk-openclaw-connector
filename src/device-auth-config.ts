@@ -9,4 +9,6 @@ export function getRegistrationBaseUrl(): string {
   return process.env.DINGTALK_REGISTRATION_BASE_URL?.trim() || "https://oapi.dingtalk.com";
 }
 
-return process.env.DINGTALK_REGISTRATION_SOURCE?.trim() || "openClaw";
+export function getRegistrationSource(): string {
+  return process.env.DINGTALK_REGISTRATION_SOURCE?.trim() || "openClaw";
+}
