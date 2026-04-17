@@ -22,6 +22,7 @@ const bold = (s) => `\x1b[1m${s}\x1b[0m`;
 const _env = globalThis['proc' + 'ess'].env;
 const BASE_URL = (_env.DINGTALK_REGISTRATION_BASE_URL || '').trim() || 'https://oapi.dingtalk.com';
 const SOURCE = (_env.DINGTALK_REGISTRATION_SOURCE || '').trim() || 'DING_DWS_CLAW';
+const CHANNEL_ID = 'dingtalk-connector';
 const PKG_NAME = '@dingtalk-real-ai/dingtalk-connector';
 
 async function post(url, body) {
@@ -172,23 +173,23 @@ function saveCredentials(clientId, clientSecret, { isLocal = false, pluginInstal
 
   // Only write channel + plugin entries when plugin is actually installed or in local mode.
   // Writing them without an installed plugin causes OpenClaw validation errors:
-  //   - channels.dingtalk-connector: unknown channel id
+  //   - channels.[CHANNEL_ID]: unknown channel id
   //   - plugins.allow: plugin not found
   const writePluginEntries = pluginInstalled || isLocal;
 
   if (writePluginEntries) {
-    // ── channels.dingtalk-connector ──
+    // ── channels.[CHANNEL_ID] ──
     if (!cfg.channels) cfg.channels = {};
-    if (!cfg.channels['dingtalk-connector']) cfg.channels['dingtalk-connector'] = {};
-    cfg.channels['dingtalk-connector'].enabled = true;
-    cfg.channels['dingtalk-connector'].clientId = clientId;
-    cfg.channels['dingtalk-connector'].clientSecret = clientSecret;
+    if (!cfg.channels[CHANNEL_ID]) cfg.channels[CHANNEL_ID] = {};
+    cfg.channels[CHANNEL_ID].enabled = true;
+    cfg.channels[CHANNEL_ID].clientId = clientId;
+    cfg.channels[CHANNEL_ID].clientSecret = clientSecret;
 
     // ── plugins.entries ──
     if (!cfg.plugins) cfg.plugins = {};
     if (!cfg.plugins.entries) cfg.plugins.entries = {};
-    if (!cfg.plugins.entries['dingtalk-connector']) cfg.plugins.entries['dingtalk-connector'] = {};
-    cfg.plugins.entries['dingtalk-connector'].enabled = true;
+    if (!cfg.plugins.entries[CHANNEL_ID]) cfg.plugins.entries[CHANNEL_ID] = {};
+    cfg.plugins.entries[CHANNEL_ID].enabled = true;
 
     // Clean up staging file since credentials are now in the real config
     clearStaging();
@@ -237,7 +238,7 @@ function installPlugin() {
   console.log('\n' + cyan(`📦 Installing ${spec}...`) + '\n');
 
   // Remove existing plugin to avoid "plugin already exists" error
-  const existingDir = join(homedir(), '.openclaw', 'extensions', 'dingtalk-connector');
+  const existingDir = join(homedir(), '.openclaw', 'extensions', CHANNEL_ID);
   if (existsSync(existingDir)) {
     console.log(dim(`  Removing previous installation: ${existingDir}`));
     rmSync(existingDir, { recursive: true, force: true });
@@ -246,18 +247,20 @@ function installPlugin() {
   // Clean stale config entries that would cause "unknown channel id" validation error
   // (e.g. from a previous run where saveCredentials wrote config but plugin install failed)
   const cfg = readConfig();
+  // Backup config before cleaning so we can restore on install failure
+  const cfgBackup = JSON.parse(JSON.stringify(cfg));
   let cfgDirty = false;
-  if (cfg.channels?.['dingtalk-connector']) {
-    delete cfg.channels['dingtalk-connector'];
+  if (cfg.channels?.[CHANNEL_ID]) {
+    delete cfg.channels[CHANNEL_ID];
     cfgDirty = true;
   }
-  if (cfg.plugins?.entries?.['dingtalk-connector']) {
-    delete cfg.plugins.entries['dingtalk-connector'];
+  if (cfg.plugins?.entries?.[CHANNEL_ID]) {
+    delete cfg.plugins.entries[CHANNEL_ID];
     cfgDirty = true;
   }
   // Also clean plugins.allow array — stale entries cause "plugin not found" validation error
   if (Array.isArray(cfg.plugins?.allow)) {
-    const idx = cfg.plugins.allow.indexOf('dingtalk-connector');
+    const idx = cfg.plugins.allow.indexOf(CHANNEL_ID);
     if (idx !== -1) {
       cfg.plugins.allow.splice(idx, 1);
       cfgDirty = true;
@@ -292,6 +295,11 @@ function installPlugin() {
       const errMsg = String(err.stderr || err.stdout || err.message || '');
       const is429 = errMsg.includes('429') || errMsg.includes('Rate limit') || errMsg.includes('rate limit');
       if (is429 && attempt < MAX_RETRIES - 1) continue;
+      // Restore backed-up config so the user doesn't lose existing entries
+      if (cfgDirty) {
+        console.log(dim('  Restoring config entries after install failure...'));
+        writeConfig(cfgBackup);
+      }
       console.error('\n' + red('⚠ Plugin install failed.') + ' Continuing with QR authorization...\n');
       console.error(dim('  You can install the plugin manually later:'));
       console.error(cyan('  openclaw plugins install ' + spec) + '\n');
@@ -333,7 +341,7 @@ function getDwsSpawnEnv() {
 
 // ── dws CLI install ─────────────────────────────────────────────
 const DWS_INSTALL_SCRIPT_URL = 'https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.sh';
-const DWS_NPM_PACKAGE = 'dingtalk-workspace-cli';
+const DWS_NPM_PACKAGE = 'dingtalk-workspace-cli@1.0.10';
 
 function isDwsInstalled() {
   const mod = ['child', 'process'].join('_');

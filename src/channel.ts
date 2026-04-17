@@ -33,6 +33,9 @@ import { monitorDingtalkProvider } from "./core/provider.ts";
 import { sendTextToDingTalk, sendMediaToDingTalk } from "./services/messaging/index.ts";
 import type { ResolvedDingtalkAccount, DingtalkConfig } from "./types/index.ts";
 
+/** Channel identifier used across the plugin. Single source of truth. */
+export const CHANNEL_ID = "dingtalk-connector" as const;
+
 /**
  * Private holder for DWS credentials. Stored in module scope instead of
  * process.env so that child processes (e.g. Shell Executor) cannot read
@@ -57,18 +60,18 @@ export function getDwsSpawnEnv(): Record<string, string> {
 }
 
 const meta = {
-  id: "dingtalk-connector",
+  id: CHANNEL_ID,
   label: "DingTalk",
   selectionLabel: "DingTalk (钉钉)",
-  docsPath: "/channels/dingtalk-connector",
-  docsLabel: "dingtalk-connector",
+  docsPath: `/channels/${CHANNEL_ID}`,
+  docsLabel: CHANNEL_ID,
   blurb: "钉钉企业内部机器人，使用 Stream 模式，无需公网 IP，支持 AI Card 流式响应。",
   aliases: ["dd", "ding"] as string[],
   order: 70,
 };
 
 export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
-  id: "dingtalk-connector",
+  id: CHANNEL_ID,
   meta: {
     ...meta,
   },
@@ -102,7 +105,7 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
   mentions: {
     stripPatterns: () => ['@[^\\s]+'], // Strip @mentions
   },
-  reload: { configPrefixes: ["channels.dingtalk-connector"] },
+  reload: { configPrefixes: [`channels.${CHANNEL_ID}`] },
   configSchema: buildChannelConfigSchema(DingtalkConfigBaseSchema),
   config: {
     listAccountIds: (cfg) => listDingtalkAccountIds(cfg),
@@ -118,8 +121,8 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
           ...cfg,
           channels: {
             ...cfg.channels,
-            "dingtalk-connector": {
-              ...cfg.channels?.["dingtalk-connector"],
+            [CHANNEL_ID]: {
+              ...cfg.channels?.[CHANNEL_ID],
               enabled,
             },
           },
@@ -127,12 +130,12 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
       }
 
       // For named accounts, set enabled in accounts[accountId]
-      const dingtalkCfg = cfg.channels?.["dingtalk-connector"] as DingtalkConfig | undefined;
+      const dingtalkCfg = cfg.channels?.[CHANNEL_ID] as DingtalkConfig | undefined;
       return {
         ...cfg,
         channels: {
           ...cfg.channels,
-          "dingtalk-connector": {
+          [CHANNEL_ID]: {
             ...dingtalkCfg,
             accounts: {
               ...dingtalkCfg?.accounts,
@@ -152,7 +155,7 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
         // Delete entire dingtalk-connector config
         const next = { ...cfg } as ClawdbotConfig;
         const nextChannels = { ...cfg.channels };
-        delete (nextChannels as Record<string, unknown>)["dingtalk-connector"];
+        delete (nextChannels as Record<string, unknown>)[CHANNEL_ID];
         if (Object.keys(nextChannels).length > 0) {
           next.channels = nextChannels;
         } else {
@@ -162,7 +165,7 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
       }
 
       // Delete specific account from accounts
-      const dingtalkCfg = cfg.channels?.["dingtalk-connector"] as DingtalkConfig | undefined;
+      const dingtalkCfg = cfg.channels?.[CHANNEL_ID] as DingtalkConfig | undefined;
       const accounts = { ...dingtalkCfg?.accounts };
       delete accounts[accountId];
 
@@ -170,7 +173,7 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
         ...cfg,
         channels: {
           ...cfg.channels,
-          "dingtalk-connector": {
+          [CHANNEL_ID]: {
             ...dingtalkCfg,
             accounts: Object.keys(accounts).length > 0 ? accounts : undefined,
           },
@@ -201,13 +204,13 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
       const dingtalkCfg = account.config;
       const defaultGroupPolicy = resolveDefaultGroupPolicy(cfg);
       const { groupPolicy } = resolveAllowlistProviderRuntimeGroupPolicy({
-        providerConfigPresent: cfg.channels?.["dingtalk-connector"] !== undefined,
+        providerConfigPresent: cfg.channels?.[CHANNEL_ID] !== undefined,
         groupPolicy: dingtalkCfg?.groupPolicy,
         defaultGroupPolicy,
       });
       if (groupPolicy !== "open") return [];
       return [
-        `- DingTalk[${account.accountId}] groups: groupPolicy="open" allows any member to trigger (mention-gated). Set channels.dingtalk-connector.groupPolicy="allowlist" + channels.dingtalk-connector.groupAllowFrom to restrict senders.`,
+        `- DingTalk[${account.accountId}] groups: groupPolicy="open" allows any member to trigger (mention-gated). Set channels.${CHANNEL_ID}.groupPolicy="allowlist" + channels.${CHANNEL_ID}.groupAllowFrom to restrict senders.`,
       ];
     },
   },
@@ -221,20 +224,20 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
           ...cfg,
           channels: {
             ...cfg.channels,
-            "dingtalk-connector": {
-              ...cfg.channels?.["dingtalk-connector"],
+            [CHANNEL_ID]: {
+              ...cfg.channels?.[CHANNEL_ID],
               enabled: true,
             },
           },
         };
       }
 
-      const dingtalkCfg = cfg.channels?.["dingtalk-connector"] as DingtalkConfig | undefined;
+      const dingtalkCfg = cfg.channels?.[CHANNEL_ID] as DingtalkConfig | undefined;
       return {
         ...cfg,
         channels: {
           ...cfg.channels,
-          "dingtalk-connector": {
+          [CHANNEL_ID]: {
             ...dingtalkCfg,
             accounts: {
               ...dingtalkCfg?.accounts,
@@ -325,7 +328,7 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
         replyToId,
       });
       return {
-        channel: "dingtalk-connector",
+        channel: CHANNEL_ID,
         messageId: result.processQueryKey ?? result.cardInstanceId ?? "unknown",
         conversationId: to,
       };
@@ -376,7 +379,7 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
       }));
       
       return {
-        channel: "dingtalk-connector",
+        channel: CHANNEL_ID,
         messageId: result.processQueryKey ?? result.cardInstanceId ?? "unknown",
         conversationId: to,
       };

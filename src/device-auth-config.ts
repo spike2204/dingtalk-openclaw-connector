@@ -10,5 +10,5 @@ export function getRegistrationBaseUrl(): string {
 }
 
 export function getRegistrationSource(): string {
-  return process.env.DINGTALK_REGISTRATION_SOURCE?.trim() || "openClaw";
+  return process.env.DINGTALK_REGISTRATION_SOURCE?.trim() || "DING_DWS_CLAW";
 }

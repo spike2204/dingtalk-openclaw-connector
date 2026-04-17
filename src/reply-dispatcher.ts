@@ -27,6 +27,7 @@ const {
 } = channelRuntimeModule;
 
 import { createLoggerFromConfig } from "./utils/logger.ts";
+import { CHANNEL_ID } from "./channel.ts";
 import { resolveDingtalkAccount } from "./config/accounts.ts";
 import { getDingtalkRuntime } from "./runtime.ts";
 import type { DingtalkConfig } from "./types/index.ts";
@@ -80,7 +81,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   const { onModelSelected, ...prefixOptions } = createReplyPrefixOptions({
     cfg,
     agentId,
-    channel: "dingtalk-connector",
+    channel: CHANNEL_ID,
     accountId,
   });
 
@@ -169,14 +170,14 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     onStartError: (err: any) =>
       logTypingFailure({
         log: (message: any) => params.runtime.log?.(message),
-        channel: "dingtalk-connector",
+        channel: CHANNEL_ID,
         action: "start",
         error: err,
       }),
     onStopError: (err: any) =>
       logTypingFailure({
         log: (message: any) => params.runtime.log?.(message),
-        channel: "dingtalk-connector",
+        channel: CHANNEL_ID,
         action: "stop",
         error: err,
       }),
@@ -184,11 +185,11 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
 
   const textChunkLimit = core.channel.text.resolveTextChunkLimit(
     cfg,
-    "dingtalk-connector",
+    CHANNEL_ID,
     accountId,
     { fallbackLimit: 4000 }
   );
-  const chunkMode = core.channel.text.resolveChunkMode(cfg, "dingtalk-connector");
+  const chunkMode = core.channel.text.resolveChunkMode(cfg, CHANNEL_ID);
 
   // 流式 AI Card 支持
   const streamingEnabled = (account.config as any)?.streaming !== false;
