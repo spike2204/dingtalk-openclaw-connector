@@ -15,6 +15,7 @@ import { homedir } from 'node:os';
 const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
+const orange = (s) => `\x1b[38;5;208m${s}\x1b[0m`;
 const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 const bold = (s) => `\x1b[1m${s}\x1b[0m`;
 
@@ -169,6 +170,32 @@ function clearStaging() {
   } catch {}
 }
 
+/**
+ * Check if existing config has both dingtalk channels (with credentials) and bindings.
+ * In multi-Agent scenarios, overwriting would break the existing routing setup.
+ */
+ function hasExistingMultiAgentConfig(cfg) {
+  const dingtalkCfg = cfg?.channels?.[CHANNEL_ID];
+  if (!dingtalkCfg) return false;
+
+  // Check if channels already has credentials configured
+  const hasChannelCreds = Boolean(dingtalkCfg.clientId && dingtalkCfg.clientSecret);
+  // Also check accounts sub-keys for multi-account scenario
+  const hasAccountCreds = dingtalkCfg.accounts && Object.values(dingtalkCfg.accounts).some(
+    (acc) => acc && acc.clientId && acc.clientSecret
+  );
+  const hasCreds = hasChannelCreds || hasAccountCreds;
+  if (!hasCreds) return false;
+
+  // Check if bindings reference dingtalk-connector
+  const bindings = Array.isArray(cfg.bindings) ? cfg.bindings : [];
+  const hasDingtalkBindings = bindings.some(
+    (b) => !b?.match?.channel || String(b.match.channel) === CHANNEL_ID
+  );
+
+  return hasDingtalkBindings;
+}
+
 function saveCredentials(clientId, clientSecret, { isLocal = false, pluginInstalled = true } = {}) {
   const cfg = readConfig();
 
@@ -179,6 +206,18 @@ function saveCredentials(clientId, clientSecret, { isLocal = false, pluginInstal
   const writePluginEntries = pluginInstalled || isLocal;
 
   if (writePluginEntries) {
+    // ── Multi-Agent protection ──
+    // If existing config already has dingtalk channels+credentials AND bindings,
+    // overwriting could break multi-Agent routing. Show credentials and let user decide.
+    if (hasExistingMultiAgentConfig(cfg)) {
+      console.log('\n' + bold('⚠ 检测到已有钉钉 channels 和 bindings 配置（多 Agent 场景）'));
+      console.log(orange('  直接覆盖可能影响现有的多 Agent 路由配置，已跳过自动写入。') + '\n');
+      console.log(cyan('  本次选择/创建的机器人信息：'));
+      console.log(`    Client ID:     ${clientId}`);
+      console.log(`    Client Secret: ${clientSecret}` + '\n');
+      return { skippedMultiAgent: true };
+    }
+
     // ── channels.[CHANNEL_ID] ──
     if (!cfg.channels) cfg.channels = {};
     if (!cfg.channels[CHANNEL_ID]) cfg.channels[CHANNEL_ID] = {};
@@ -502,25 +541,31 @@ Options:
     console.log('\n' + dim('Saving local configuration... (正在进行本地配置...)') + '\n');
 
     // Step 5: Save config
-    saveCredentials(creds.clientId, creds.clientSecret, { isLocal, pluginInstalled });
+    const saveResult = saveCredentials(creds.clientId, creds.clientSecret, { isLocal, pluginInstalled });
 
     // Step 5.1: Inject DWS environment variables for dws CLI integration
     injectDwsEnvVars(creds.clientId, creds.clientSecret);
 
-    console.log(green('✔ Success! Bot configured. (机器人配置成功!)'));
-    console.log(dim(`  Configuration saved to ${getConfigPath()}`) + '\n');
-
-    // Step 6: Post-install guidance
-    if (!pluginInstalled && !isLocal) {
-      console.log(red('⚠ Plugin was not installed.') + ' Credentials saved for later.\n');
-      console.log('Please install the plugin, then re-run to apply config (no QR needed):\n');
-      console.log(cyan('  openclaw plugins install ' + getInstallSpec()));
-      console.log(cyan('  npx -y ' + PKG_NAME + ' install') + '\n');
-    } else {
-      console.log(cyan('Please restart the gateway to apply changes:') + '\n');
+    if (saveResult?.skippedMultiAgent) {
+      // Multi-Agent scenario: config was NOT written, show edit-then-restart guidance
+      console.log(cyan('After editing the config, please restart the gateway to apply changes:') + '\n');
       console.log(cyan('  openclaw gateway restart') + '\n');
-      // Note: the ~3 min warm-up is an OpenClaw gateway behaviour, not plugin-specific.
-      console.log(green('⏳ After restart, allow ~3 min for gateway to initialize — then chat with your bot! (网关初始化约3分钟，完成即可对话)') + '\n');
+    } else {
+      console.log(green('✔ Success! Bot configured. (机器人配置成功!)'));
+      console.log(dim(`  Configuration saved to ${getConfigPath()}`) + '\n');
+
+      // Step 6: Post-install guidance
+      if (!pluginInstalled && !isLocal) {
+        console.log(red('⚠ Plugin was not installed.') + ' Credentials saved for later.\n');
+        console.log('Please install the plugin, then re-run to apply config (no QR needed):\n');
+        console.log(cyan('  openclaw plugins install ' + getInstallSpec()));
+        console.log(cyan('  npx -y ' + PKG_NAME + ' install') + '\n');
+      } else {
+        console.log(cyan('Please restart the gateway to apply changes:') + '\n');
+        console.log(cyan('  openclaw gateway restart') + '\n');
+        // Note: the ~3 min warm-up is an OpenClaw gateway behaviour, not plugin-specific.
+        console.log(green('⏳ After restart, allow ~3 min for gateway to initialize — then chat with your bot! (网关初始化约3分钟，完成即可对话)') + '\n');
+      }
     }
   } catch (err) {
     console.error('\n' + red('❌ Authorization failed: ') + err.message + '\n');

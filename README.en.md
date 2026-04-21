@@ -25,6 +25,9 @@ This plugin provides comprehensive DingTalk integration for OpenClaw:
 | Category | Capabilities |
 |----------|-------------|
 | 💬 Messaging | Receive group/DM messages, auto-reply, send text/Markdown, @mentions |
+| ✅ Tasks | Create personal tasks, check status, set deadlines |
+| 📊 AI Sheets | Create sheets, read/write rows, conditional queries |
+| 📅 Calendar | Calendar management, event management (create/query/modify/delete/search), attendee management, free/busy queries |
 
 Additionally, the plugin supports:
 
@@ -35,18 +38,11 @@ Additionally, the plugin supports:
 - 🖼️ **Rich Media**: Receive images/audio/file attachments, auto-upload local images
 - 🔄 **Session Management**: Multi-turn conversation context, isolated sessions for DMs/groups
 
-> ✅ **Supported Business Capabilities**
-
-| Category | Capabilities |
-|----------|-------------|
-| ✅ Tasks | Create personal tasks, check status, set deadlines |
-| 🔔 DING | Send urgent DING reminders to users/groups |
-| 📊 AI Sheets | Create sheets, read/write rows, conditional queries |
-
 > 🚧 **Coming Soon** — The following capabilities are under active development!
 
 | Category | Capabilities |
 |----------|-------------|
+| 🔔 DING | Send urgent DING reminders to users/groups |
 | ✅ Tasks | Create group tasks, check status, set deadlines |
 | 📝 Reports | Submit daily/weekly reports, query history |
 | 📁 Drive | Upload/download files to DingTalk Drive |
