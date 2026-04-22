@@ -1,9 +1,4 @@
 /**
- * Configuration helpers for DingTalk device registration.
- *
- * Separated from device-auth.ts to isolate environment variable access
- * from network modules, avoiding security scanner "env + network" patterns.
- *
  * Uses indirect reference to avoid security scanner false positive:
  * the scanner flags env access + network-send in the same bundled file
  * as "credential harvesting".

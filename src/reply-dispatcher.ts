@@ -96,6 +96,13 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   
   // 异步模式：累积完整响应
   let asyncModeFullResponse = "";
+
+  // ===== 养成系统: 通过 onCommandOutput 监听 dws 命令执行 =====
+  // 记录当前回复周期内 onCommandOutput 回调检测到的 dws 产品名（如 "aitable"、"calendar"），
+  // 在 closeStreaming 时用于触发降妖逻辑，每轮结束后清空。
+  const detectedDwsProducts = new Set<string>();
+  // 匹配 shell 命令中的 dws 子命令（如 `dws aitable list`），提取产品名用于养成系统掉落判定。
+  const DWS_PRODUCT_PATTERN = /\bdws\s+(aitable|calendar|chat|contact|todo|approval|attendance|report|ding|workbench|devdoc)\b/;
   
   // ✅ 节流控制：避免频繁调用钉钉 API 导致 QPS 限流
   // 全局令牌桶限流器已在 streamAICard 内部实现（card.ts），此处的 updateInterval
@@ -348,6 +355,43 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         log.info(`[DingTalk][closeStreaming] processRawMediaPaths 处理完成`);
       } else {
         log.warn(`[DingTalk][closeStreaming] oapiToken 为空，跳过媒体处理`);
+      }
+
+      // ===== 养成系统：基于 onCommandOutput 检测到的 dws 产品触发降妖 =====
+      // 优先使用 onCommandOutput 监听到的产品（精准），兜底用正则匹配回复文本
+      try {
+        const productsToProcess = new Set<string>(detectedDwsProducts);
+
+        // 兜底：如果 onCommandOutput 没捕获到，尝试从回复文本中正则匹配
+        if (productsToProcess.size === 0) {
+          const dwsProductMatch = finalText.match(/(?:^|\n)\s*(?:>?\s*)?(?:`\s*)?dws\s+(aitable|calendar|chat|contact|todo|approval|attendance|report|ding|workbench|devdoc)\b/m);
+          if (dwsProductMatch && !finalText.includes('command not found: dws') && !finalText.includes('请先执行 dws login')) {
+            productsToProcess.add(dwsProductMatch[1]);
+            log.info(`[DingTalk][closeStreaming] 养成系统：正则兜底匹配到产品=${dwsProductMatch[1]}`);
+          }
+        } else {
+          log.info(`[DingTalk][closeStreaming] 养成系统：onCommandOutput 监听到 ${productsToProcess.size} 个 dws 产品: ${[...productsToProcess].join(', ')}`);
+        }
+
+        if (productsToProcess.size > 0) {
+          const { GamificationEngine } = await import('./game-xiyou/index.ts');
+          const engine = GamificationEngine.getInstanceForUser(senderId);
+          if (engine.isEnabled()) {
+            // 一次任务只触发一次降妖，取第一个产品作为代表
+            const primaryProduct = [...productsToProcess][0];
+            const allProducts = [...productsToProcess].join('+');
+            const gamificationBlock = engine.onDwsCommandResult(primaryProduct, true, `dws ${allProducts}`);
+            if (gamificationBlock) {
+              finalText += '\n' + gamificationBlock;
+              log.info(`[DingTalk][closeStreaming] ✅ 养成系统渲染已追加，主产品=${primaryProduct}，涉及产品=${allProducts}`);
+            }
+          }
+        }
+
+        // 清空本轮检测记录
+        detectedDwsProducts.clear();
+      } catch (gamErr: any) {
+        log.warn(`[DingTalk][closeStreaming] 养成系统处理失败（不影响主流程）: ${gamErr?.message || gamErr}`);
       }
 
       log.info(`[DingTalk][closeStreaming] 准备调用 finishAICard，文本长度=${finalText.length}`);
@@ -663,6 +707,33 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         }
       },
       }),
+      // ===== 养成系统：监听 dws 命令执行 =====
+      onCommandOutput: (payload: {
+        itemId?: string;
+        phase?: string;
+        title?: string;
+        toolCallId?: string;
+        name?: string;
+        output?: string;
+        status?: string;
+        exitCode?: number | null;
+        durationMs?: number;
+        cwd?: string;
+      }) => {
+        const commandText = payload.title || payload.name || '';
+        const dwsMatch = commandText.match(DWS_PRODUCT_PATTERN) || payload.output?.match(DWS_PRODUCT_PATTERN);
+        if (dwsMatch) {
+          const product = dwsMatch[1];
+          // 只记录成功执行的命令（exitCode 为 0 或 phase 不是 end 时还不知道结果）
+          const isFailure = payload.phase === 'end' && payload.exitCode !== null && payload.exitCode !== 0;
+          if (!isFailure) {
+            detectedDwsProducts.add(product);
+            log.info(`[DingTalk][onCommandOutput] 检测到 dws 产品: ${product}，phase=${payload.phase}, exitCode=${payload.exitCode}`);
+          } else {
+            log.info(`[DingTalk][onCommandOutput] dws 命令执行失败，跳过: ${product}，exitCode=${payload.exitCode}`);
+          }
+        }
+      },
     },
     markDispatchIdle,
     getAsyncModeResponse: () => asyncModeFullResponse,
