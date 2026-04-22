@@ -58,6 +58,26 @@ alwaysActive: true
 | 文件、云盘、上传、下载 | `dws drive` | 上传/下载文件到钉钉云盘 |
 | DING、紧急消息、强提醒 | `dws ding` | 向用户/群发送强提醒 DING |
 
+### 🔑 多机器人场景：bot 凭证隔离（重要）
+
+当配置了多个钉钉机器人时，必须确保 dws 命令使用**当前对话机器人**的凭据，避免"串台"（用错误的机器人身份操作）。
+
+**当前 bot 的 clientId 获取方式：**
+
+每条用户消息的上下文中会自动包含 `[DingTalk Bot Context]` 标记，其中含有当前对话 bot 的 `clientId`。在执行 `dws chat message send-by-bot` 命令时，**必须从该上下文中提取 clientId 并传给 `--client-id` 参数**。
+
+**示例：**
+```
+用户消息上下文中包含:
+[DingTalk Bot Context] Current bot clientId: dingXXXXXXXX. ...
+
+执行命令时注入:
+dws chat message send-by-bot --client-id dingXXXXXXXX --robot-code <code> --users "userId" \
+  --title "通知" --text "消息内容" --format json
+```
+
+> ⚠️ **如果不传 `--client-id`，dws 会使用默认登录的机器人凭据，可能导致消息从错误的机器人发出。** 每次执行 `dws chat` 相关命令时都必须从上下文中获取并传入 `--client-id`。
+
 ### 易混淆场景速查
 
 | 场景 | 正确选择 | 错误选择 |

@@ -1165,6 +1165,30 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
   const normalizedText = normalizeSlashCommand(rawText);
   let userContent = normalizedText || (content.imageUrls.length > 0 ? '请描述这张图片' : '');
 
+  // ===== 养成系统命令拦截 =====
+  try {
+    const { GamificationEngine, isGamificationCommand } = await import('../game-xiyou/index.ts');
+    if (isGamificationCommand(rawText)) {
+      const engine = GamificationEngine.getInstanceForUser(senderId);
+      // /西游 命令始终可用（用于开关切换），其他命令需要 enabled
+      const isToggleCommand = rawText.trim().startsWith('/西游');
+      if (isToggleCommand || engine.isEnabled()) {
+        const response = engine.handleCommand(rawText);
+        if (response) {
+          log?.info?.(`[DingTalk][Gamification] 处理养成系统命令: ${rawText.slice(0, 20)}`);
+          await sendProactive(config, isDirect ? { userId: senderId } : { openConversationId: data.conversationId }, response, {
+            useAICard: true,
+            fallbackToNormal: true,
+            log,
+          });
+          return;
+        }
+      }
+    }
+  } catch (gamErr: any) {
+    log?.warn?.(`[DingTalk][Gamification] 命令处理失败: ${gamErr?.message || gamErr}`);
+  }
+
   // ===== 图片下载到本地文件 =====
   const imageLocalPaths: string[] = [];
   
@@ -1447,6 +1471,16 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       asyncMode,
       preCreatedCard: params.preCreatedCard,
     });
+
+    // ===== 注入当前 bot 的 clientId（用于 dws CLI --client-id 参数） =====
+    // 多 bot 场景下，AI 需要知道当前对话属于哪个 bot，以便在调用
+    // dws chat message send-by-bot 时传入正确的 --client-id，避免消息串台。
+    if (config.clientId) {
+      const botIdentityHint = `[DingTalk Bot Context] Current bot clientId: ${String(config.clientId)}. When executing \`dws chat message send-by-bot\`, always pass \`--client-id ${String(config.clientId)}\` to ensure messages are sent from the correct bot.`;
+      finalContent = finalContent
+        ? `${finalContent}\n\n${botIdentityHint}`
+        : botIdentityHint;
+    }
 
     // ===== 构建卡片链接路由指令（对齐 Rust agent_support.rs build_link_routing_prompt）=====
     // 识别 interactiveCard / actionCard 消息中的 URL，根据 host 注入不同的 AI 指令：
