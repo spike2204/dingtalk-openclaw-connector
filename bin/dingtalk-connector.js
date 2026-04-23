@@ -289,8 +289,9 @@ function installPlugin() {
   const cfg = readConfig();
   // Backup config before cleaning so we can restore on install failure
   const cfgBackup = JSON.parse(JSON.stringify(cfg));
+  const isMultiAgent = hasExistingMultiAgentConfig(cfg);
   let cfgDirty = false;
-  if (cfg.channels?.[CHANNEL_ID]) {
+  if (cfg.channels?.[CHANNEL_ID] && !isMultiAgent) {
     delete cfg.channels[CHANNEL_ID];
     cfgDirty = true;
   }
