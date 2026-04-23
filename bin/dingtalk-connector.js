@@ -171,29 +171,25 @@ function clearStaging() {
 }
 
 /**
- * Check if existing config has both dingtalk channels (with credentials) and bindings.
- * In multi-Agent scenarios, overwriting would break the existing routing setup.
+ * Check if existing config looks like a multi-Agent setup.
+ * Returns true when EITHER condition is met:
+ *   1. channels.dingtalk-connector.accounts exists (multi-account structure)
+ *   2. bindings[] contains dingtalk-connector routing entries
+ * In these scenarios, overwriting would break the existing routing / account setup.
  */
  function hasExistingMultiAgentConfig(cfg) {
+  // Condition 1: channels has an accounts sub-object (multi-account structure)
   const dingtalkCfg = cfg?.channels?.[CHANNEL_ID];
-  if (!dingtalkCfg) return false;
+  const hasAccounts = dingtalkCfg?.accounts && typeof dingtalkCfg.accounts === 'object'
+    && Object.keys(dingtalkCfg.accounts).length > 0;
 
-  // Check if channels already has credentials configured
-  const hasChannelCreds = Boolean(dingtalkCfg.clientId && dingtalkCfg.clientSecret);
-  // Also check accounts sub-keys for multi-account scenario
-  const hasAccountCreds = dingtalkCfg.accounts && Object.values(dingtalkCfg.accounts).some(
-    (acc) => acc && acc.clientId && acc.clientSecret
-  );
-  const hasCreds = hasChannelCreds || hasAccountCreds;
-  if (!hasCreds) return false;
-
-  // Check if bindings reference dingtalk-connector
+  // Condition 2: bindings reference dingtalk-connector
   const bindings = Array.isArray(cfg.bindings) ? cfg.bindings : [];
   const hasDingtalkBindings = bindings.some(
     (b) => !b?.match?.channel || String(b.match.channel) === CHANNEL_ID
   );
 
-  return hasDingtalkBindings;
+  return hasAccounts || hasDingtalkBindings;
 }
 
 function saveCredentials(clientId, clientSecret, { isLocal = false, pluginInstalled = true } = {}) {
@@ -331,6 +327,26 @@ function installPlugin() {
     }
     try {
       execFileSync('openclaw', ['plugins', 'install', spec], { stdio: 'inherit' });
+      // Restore channels & plugins.entries data that was cleaned before install
+      if (cfgDirty) {
+        const latestCfg = readConfig();
+        let restored = false;
+        if (cfgBackup.channels?.[CHANNEL_ID]) {
+          if (!latestCfg.channels) latestCfg.channels = {};
+          latestCfg.channels[CHANNEL_ID] = cfgBackup.channels[CHANNEL_ID];
+          restored = true;
+        }
+        if (cfgBackup.plugins?.entries?.[CHANNEL_ID]) {
+          if (!latestCfg.plugins) latestCfg.plugins = {};
+          if (!latestCfg.plugins.entries) latestCfg.plugins.entries = {};
+          latestCfg.plugins.entries[CHANNEL_ID] = cfgBackup.plugins.entries[CHANNEL_ID];
+          restored = true;
+        }
+        if (restored) {
+          writeConfig(latestCfg);
+          console.log(dim('  Restored channel config entries after install.'));
+        }
+      }
       return true;
     } catch (err) {
       const errMsg = String(err.stderr || err.stdout || err.message || '');
