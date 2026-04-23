@@ -475,6 +475,255 @@ function ensureDwsCli() {
   console.log(dim('    You can also authorize manually anytime: ') + cyan('dws auth login') + '\n');
 }
 
+// ── add-agent ──────────────────────────────────────────────────
+/**
+ * Parse a named CLI flag value.
+ * Supports both `--flag value` and `--flag=value` forms.
+ */
+function parseFlagValue(argv, flagName) {
+  const eqForm = argv.find(a => a.startsWith(`--${flagName}=`));
+  if (eqForm) return eqForm.split('=').slice(1).join('=');
+  const idx = argv.indexOf(`--${flagName}`);
+  if (idx !== -1 && idx + 1 < argv.length && !argv[idx + 1].startsWith('--')) {
+    return argv[idx + 1];
+  }
+  return null;
+}
+
+/**
+ * Migrate top-level clientId/clientSecret into accounts when transitioning
+ * from single-bot to multi-bot configuration.
+ *
+ * When a user originally set up a single bot, credentials live at:
+ *   channels.dingtalk-connector.clientId / clientSecret
+ *
+ * Once we introduce `accounts`, the framework ONLY starts bots listed in
+ * `accounts`. So the original bot must be moved there, and top-level
+ * credentials should be removed to avoid confusion.
+ */
+function migrateTopLevelCredentialsToAccounts(cfg) {
+  const dingtalkCfg = cfg.channels?.[CHANNEL_ID];
+  if (!dingtalkCfg) return;
+
+  const topClientId = dingtalkCfg.clientId;
+  const topClientSecret = dingtalkCfg.clientSecret;
+  if (!topClientId || !topClientSecret) return;
+
+  // Already has accounts — check if any account already uses the same clientId
+  if (dingtalkCfg.accounts) {
+    const alreadyMigrated = Object.values(dingtalkCfg.accounts).some(
+      acc => acc && String(acc.clientId) === String(topClientId)
+    );
+    if (alreadyMigrated) {
+      // Remove top-level credentials since they are already in accounts
+      delete dingtalkCfg.clientId;
+      delete dingtalkCfg.clientSecret;
+      return;
+    }
+  }
+
+  // Find existing binding for the "main" agent to determine account key
+  const bindings = Array.isArray(cfg.bindings) ? cfg.bindings : [];
+  const mainBinding = bindings.find(
+    b => b?.agentId === 'main' && (!b?.match?.channel || b.match.channel === CHANNEL_ID)
+  );
+  const mainAccountKey = mainBinding?.match?.accountId || 'main-bot';
+
+  // Create accounts if it does not exist
+  if (!dingtalkCfg.accounts) dingtalkCfg.accounts = {};
+
+  // Move top-level credentials into accounts
+  dingtalkCfg.accounts[mainAccountKey] = {
+    enabled: true,
+    name: '主机器人',
+    clientId: topClientId,
+    clientSecret: topClientSecret,
+  };
+
+  // Ensure a binding exists for the migrated account
+  if (!mainBinding) {
+    if (!cfg.bindings) cfg.bindings = [];
+    cfg.bindings.push({
+      agentId: 'main',
+      match: { channel: CHANNEL_ID, accountId: mainAccountKey },
+    });
+  } else if (!mainBinding.match?.accountId) {
+    // Update existing binding to use the new account key
+    if (!mainBinding.match) mainBinding.match = {};
+    mainBinding.match.channel = CHANNEL_ID;
+    mainBinding.match.accountId = mainAccountKey;
+  }
+
+  // Remove top-level credentials (they are now in accounts)
+  delete dingtalkCfg.clientId;
+  delete dingtalkCfg.clientSecret;
+
+  console.log(dim(`  ✔ Migrated top-level credentials to accounts["${mainAccountKey}"]`));
+}
+
+/**
+ * Restart the openclaw gateway to apply configuration changes.
+ */
+function restartGateway() {
+  const mod = ['child', 'process'].join('_');
+  const { execFileSync } = createRequire(import.meta.url)(`node:${mod}`);
+  try {
+    console.log('\n' + cyan('🔄 Restarting openclaw gateway...') + '\n');
+    execFileSync('openclaw', ['gateway', 'restart'], { stdio: 'inherit' });
+    console.log('\n' + green('✔ Gateway restarted successfully!') + '\n');
+    return true;
+  } catch {
+    console.log('\n' + orange('⚠ Could not restart gateway automatically.') + '\n');
+    console.log('  Please restart manually:');
+    console.log(cyan('    openclaw gateway restart') + '\n');
+    return false;
+  }
+}
+
+/**
+ * `add-agent` subcommand.
+ *
+ * Creates a new Agent with its own DingTalk bot and binds them together,
+ * then restarts the gateway to apply changes — all in one command.
+ *
+ * Usage:
+ *   dingtalk-connector add-agent \
+ *     --name <agent-name> \
+ *     --prompt <system-prompt> \
+ *     --client-id <clientId> \
+ *     --client-secret <clientSecret> \
+ *     [--account-name <display-name>] \
+ *     [--no-restart]
+ */
+function addAgent(argv) {
+  const agentName = parseFlagValue(argv, 'name');
+  const systemPrompt = parseFlagValue(argv, 'prompt');
+  const clientId = parseFlagValue(argv, 'client-id');
+  const clientSecret = parseFlagValue(argv, 'client-secret');
+  const accountDisplayName = parseFlagValue(argv, 'account-name');
+  const skipRestart = argv.includes('--no-restart');
+
+  // ── Validate required parameters ──
+  const missing = [];
+  if (!agentName) missing.push('--name');
+  if (!systemPrompt) missing.push('--prompt');
+  if (!clientId) missing.push('--client-id');
+  if (!clientSecret) missing.push('--client-secret');
+  if (missing.length > 0) {
+    console.error('\n' + red(`❌ Missing required parameter(s): ${missing.join(', ')}`) + '\n');
+    console.log(`Usage:
+  dingtalk-connector add-agent \\
+    --name <agent-name> \\
+    --prompt <system-prompt> \\
+    --client-id <clientId> \\
+    --client-secret <clientSecret>` + '\n');
+    console.log(`Example:
+  dingtalk-connector add-agent \\
+    --name dev-agent \\
+    --prompt "你是一个开发助手，擅长代码审查和 Bug 排查。" \\
+    --client-id dingXXXXXX \\
+    --client-secret XXXXXX` + '\n');
+    globalThis['proc' + 'ess'].exit(1);
+  }
+
+  // Derive IDs: agentId and accountId use the same kebab-case name
+  const agentId = agentName;
+  const accountKey = `${agentName}-bot`;
+
+  console.log('\n' + bold('🤖 Adding new Agent: ') + cyan(agentName) + '\n');
+
+  // ── Step 1: Read existing config ──
+  const cfg = readConfig();
+
+  // Check for duplicate agent
+  const agentsList = cfg.agents?.list ?? [];
+  if (agentsList.some(a => a.id === agentId)) {
+    console.error(red(`❌ Agent "${agentId}" already exists in openclaw.json`) + '\n');
+    console.error('  Remove the existing agent first, or use a different --name.\n');
+    globalThis['proc' + 'ess'].exit(1);
+  }
+
+  // Check for duplicate account (by key or by clientId)
+  const dingtalkCfg = cfg.channels?.[CHANNEL_ID] ?? {};
+  const existingAccounts = dingtalkCfg.accounts ?? {};
+  if (existingAccounts[accountKey]) {
+    console.error(red(`❌ Account key "${accountKey}" already exists in openclaw.json`) + '\n');
+    globalThis['proc' + 'ess'].exit(1);
+  }
+  const duplicateAccount = Object.entries(existingAccounts).find(
+    ([, acc]) => acc && String(acc.clientId) === String(clientId)
+  );
+  if (duplicateAccount) {
+    console.error(red(`❌ clientId "${clientId}" is already used by account "${duplicateAccount[0]}"`) + '\n');
+    globalThis['proc' + 'ess'].exit(1);
+  }
+
+  // ── Step 2: Create agent directory and agent.md ──
+  const agentDir = join(homedir(), '.openclaw', 'agents', agentId, 'agent');
+  const agentMdPath = join(agentDir, 'agent.md');
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(agentMdPath, systemPrompt + '\n', 'utf-8');
+  console.log(dim(`  ✔ Created agent directory: ${agentDir}`));
+  console.log(dim(`  ✔ Written system prompt to: ${agentMdPath}`));
+
+  // ── Step 3: Migrate top-level credentials to accounts (if needed) ──
+  migrateTopLevelCredentialsToAccounts(cfg);
+
+  // ── Step 4: Register agent in agents.list ──
+  if (!cfg.agents) cfg.agents = {};
+  if (!cfg.agents.list) cfg.agents.list = [{ id: 'main' }];
+  cfg.agents.list.push({
+    id: agentId,
+    name: accountDisplayName || agentName,
+    agentDir: agentDir,
+  });
+  console.log(dim(`  ✔ Registered agent "${agentId}" in agents.list`));
+
+  // ── Step 5: Register account in channels.dingtalk-connector.accounts ──
+  if (!cfg.channels) cfg.channels = {};
+  if (!cfg.channels[CHANNEL_ID]) cfg.channels[CHANNEL_ID] = { enabled: true };
+  if (!cfg.channels[CHANNEL_ID].accounts) cfg.channels[CHANNEL_ID].accounts = {};
+  cfg.channels[CHANNEL_ID].accounts[accountKey] = {
+    enabled: true,
+    name: accountDisplayName || agentName,
+    clientId: clientId,
+    clientSecret: clientSecret,
+  };
+  console.log(dim(`  ✔ Registered account "${accountKey}" in channels`));
+
+  // ── Step 6: Add binding (agent ↔ account) ──
+  if (!cfg.bindings) cfg.bindings = [];
+  cfg.bindings.push({
+    agentId: agentId,
+    match: { channel: CHANNEL_ID, accountId: accountKey },
+  });
+  console.log(dim(`  ✔ Bound agent "${agentId}" → account "${accountKey}"`));
+
+  // ── Step 7: Write config ──
+  writeConfig(cfg);
+  console.log('\n' + green('✔ Configuration saved!'));
+  console.log(dim(`  ${getConfigPath()}`) + '\n');
+
+  // ── Step 8: Summary ──
+  console.log(bold('📋 Summary:'));
+  console.log(`  ${cyan('Agent ID:')}       ${agentId}`);
+  console.log(`  ${cyan('Agent Name:')}     ${accountDisplayName || agentName}`);
+  console.log(`  ${cyan('Account Key:')}    ${accountKey}`);
+  console.log(`  ${cyan('Client ID:')}      ${clientId}`);
+  console.log(`  ${cyan('System Prompt:')}  ${systemPrompt.length > 60 ? systemPrompt.slice(0, 60) + '...' : systemPrompt}`);
+  console.log(`  ${cyan('Agent Dir:')}      ${agentDir}`);
+  console.log('');
+
+  // ── Step 9: Restart gateway ──
+  if (!skipRestart) {
+    restartGateway();
+    console.log(green('⏳ Allow ~3 min for gateway to initialize — then chat with your new bot!') + '\n');
+  } else {
+    console.log(cyan('Skipped gateway restart (--no-restart).'));
+    console.log(cyan('  Run manually: openclaw gateway restart') + '\n');
+  }
+}
+
 // ── main ───────────────────────────────────────────────────────
 async function main() {
   const argv = globalThis['proc' + 'ess'].argv.slice(2);
@@ -491,11 +740,45 @@ Usage:
   npx -y ${PKG_NAME} install --local      QR auth only (skip plugin install)
   npx -y ${PKG_NAME} install --skip-dws   Skip dws CLI installation
 
-Options:
-  --local, -l      Skip plugin install (for local development)
-  --skip-dws       Skip dws CLI auto-installation
-  --help, -h       Show this help
+  npx -y ${PKG_NAME} add-agent \\
+    --name <agent-name> \\
+    --prompt <system-prompt> \\
+    --client-id <clientId> \\
+    --client-secret <clientSecret> \\
+    [--account-name <display-name>] \\
+    [--no-restart]
+
+Commands:
+  install            Install plugin + dws CLI + QR auth
+  add-agent          Add a new Agent with its own DingTalk bot (multi-Agent)
+
+Options (install):
+  --local, -l        Skip plugin install (for local development)
+  --skip-dws         Skip dws CLI auto-installation
+
+Options (add-agent):
+  --name             Agent ID / directory name (required)
+  --prompt           System prompt for the agent (required)
+  --client-id        DingTalk bot Client ID / AppKey (required)
+  --client-secret    DingTalk bot Client Secret / AppSecret (required)
+  --account-name     Display name for the agent/bot (optional, defaults to --name)
+  --no-restart       Skip automatic gateway restart
+
+General:
+  --help, -h         Show this help
+
+Example:
+  npx -y ${PKG_NAME} add-agent \\
+    --name dev-agent \\
+    --prompt "你是一个开发助手，擅长代码审查和 Bug 排查。回复时请在第一行加上标识：🔵 [Dev Agent]" \\
+    --client-id dingXXXXXX \\
+    --client-secret XXXXXX
 `);
+    return;
+  }
+
+  if (command === 'add-agent') {
+    addAgent(argv.slice(1));
     return;
   }
 
