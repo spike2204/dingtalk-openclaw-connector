@@ -327,25 +327,24 @@ function installPlugin() {
     }
     try {
       execFileSync('openclaw', ['plugins', 'install', spec], { stdio: 'inherit' });
-      // Restore channels & plugins.entries data that was cleaned before install
-      if (cfgDirty) {
-        const latestCfg = readConfig();
-        let restored = false;
-        if (cfgBackup.channels?.[CHANNEL_ID]) {
-          if (!latestCfg.channels) latestCfg.channels = {};
-          latestCfg.channels[CHANNEL_ID] = cfgBackup.channels[CHANNEL_ID];
-          restored = true;
-        }
-        if (cfgBackup.plugins?.entries?.[CHANNEL_ID]) {
-          if (!latestCfg.plugins) latestCfg.plugins = {};
-          if (!latestCfg.plugins.entries) latestCfg.plugins.entries = {};
-          latestCfg.plugins.entries[CHANNEL_ID] = cfgBackup.plugins.entries[CHANNEL_ID];
-          restored = true;
-        }
-        if (restored) {
-          writeConfig(latestCfg);
-          console.log(dim('  Restored channel config entries after install.'));
-        }
+      // Always restore channels & plugins.entries after install.
+      // Both our cleaning logic AND `openclaw plugins install` can strip these entries.
+      const latestCfg = readConfig();
+      let restored = false;
+      if (cfgBackup.channels?.[CHANNEL_ID] && !latestCfg.channels?.[CHANNEL_ID]) {
+        if (!latestCfg.channels) latestCfg.channels = {};
+        latestCfg.channels[CHANNEL_ID] = cfgBackup.channels[CHANNEL_ID];
+        restored = true;
+      }
+      if (cfgBackup.plugins?.entries?.[CHANNEL_ID] && !latestCfg.plugins?.entries?.[CHANNEL_ID]) {
+        if (!latestCfg.plugins) latestCfg.plugins = {};
+        if (!latestCfg.plugins.entries) latestCfg.plugins.entries = {};
+        latestCfg.plugins.entries[CHANNEL_ID] = cfgBackup.plugins.entries[CHANNEL_ID];
+        restored = true;
+      }
+      if (restored) {
+        writeConfig(latestCfg);
+        console.log(dim('  Restored channel config entries after install.'));
       }
       return true;
     } catch (err) {
