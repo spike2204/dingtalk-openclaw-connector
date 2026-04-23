@@ -239,6 +239,14 @@
           "debug": {
             "type": "boolean"
           },
+          "groupReplyMode": {
+            "type": "string",
+            "enum": [
+              "aicard",
+              "text",
+              "markdown"
+            ]
+          },
           "accounts": {
             "type": "object",
             "additionalProperties": {
@@ -293,6 +301,12 @@
                       "additionalProperties": false
                     }
                   ]
+                },
+                "chatbotUserId": {
+                  "type": "string"
+                },
+                "chatbotCorpId": {
+                  "type": "string"
                 },
                 "dmPolicy": {
                   "type": "string",
@@ -449,6 +463,14 @@
                 },
                 "debug": {
                   "type": "boolean"
+                },
+                "groupReplyMode": {
+                  "type": "string",
+                  "enum": [
+                    "aicard",
+                    "text",
+                    "markdown"
+                  ]
                 }
               },
               "additionalProperties": false

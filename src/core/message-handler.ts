@@ -1455,7 +1455,10 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       CommandAuthorized: true,
       OriginatingChannel: "dingtalk-connector" as const,
       OriginatingTo: toField,  // ✅ 修复：应该使用 toField，而不是 accountId
-    });
+      // 当前机器人的加密身份（用于多机器人协作时让上层 Agent 引用 / 互相 @）
+      BotChatbotUserId: data.chatbotUserId,
+      BotChatbotCorpId: data.chatbotCorpId,
+    } as any);
 
     // 创建 reply dispatcher，使用解析后的 agentId
     const { dispatcher, replyOptions, markDispatchIdle, getAsyncModeResponse } = createDingtalkReplyDispatcher({

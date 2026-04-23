@@ -97,6 +97,13 @@ export const DingtalkAccountConfigSchema = z
     name: z.string().optional(), // Display name for this account
     clientId: z.union([z.string(), z.number()]).optional(),
     clientSecret: buildSecretInputSchema().optional(),
+    /**
+     * Encrypted DingTalk identity of this bot, used by other agents to @-mention
+     * this bot in group messages. Fill from log line `[BotIdentity] chatbotUserId=...`
+     * after the bot has received at least one group/DM message.
+     */
+    chatbotUserId: z.string().optional(),
+    chatbotCorpId: z.string().optional(),
     ...DingtalkSharedConfigShape,
   })
   .strict();

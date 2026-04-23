@@ -568,19 +568,20 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
               chunkMode
             )) {
               if (isTextMode) {
-                // text/markdown 模式：使用指定格式通过 sessionWebhook 发送
                 if (groupReplyMode === 'markdown') {
                   await sendMarkdownMessage(
                     account.config as DingtalkConfig,
                     sessionWebhook,
                     chunk.split('\n')[0]?.replace(/^[#*\s\->]+/, '').slice(0, 20) || 'Message',
                     chunk,
+                    { cfg, detectBareAliases: true },
                   );
                 } else {
                   await sendTextMessage(
                     account.config as DingtalkConfig,
                     sessionWebhook,
                     chunk,
+                    { cfg, detectBareAliases: true },
                   );
                 }
               } else {
@@ -591,6 +592,8 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
                   {
                     useMarkdown: true,
                     log: params.runtime.log,
+                    cfg,
+                    detectBareAliases: true,
                   }
                 );
               }
