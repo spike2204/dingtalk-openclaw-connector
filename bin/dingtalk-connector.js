@@ -381,7 +381,7 @@ function getDwsSpawnEnv() {
 
 // ── dws CLI install ─────────────────────────────────────────────
 const DWS_INSTALL_SCRIPT_URL = 'https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.sh';
-const DWS_NPM_PACKAGE = 'dingtalk-workspace-cli@1.0.10';
+const DWS_NPM_PACKAGE = 'dingtalk-workspace-cli@1.0.13';
 
 function isDwsInstalled() {
   const mod = ['child', 'process'].join('_');
