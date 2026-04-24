@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.19] - 2026-04-25
+
+### 新增 / Added
+- 🔔 **DING 消息** — 支持向用户/群发送强提醒 DING（应用内/短信/电话），用户授权后即可使用
+- 📄 **钉钉文档** — 支持创建、追加、搜索、列举钉钉文档，用户授权后即可使用
+- 📝 **日志** — 支持提交日报/周报、查询历史日志记录，用户授权后即可使用
+- ✨ **插件重复加载检测** — 全局 Symbol 自检同一 plugin id 多路径加载，防止 stream 回调冲突
+
+### 修复 / Fixes
+- 🐛 AI Card QPS 限流不再误报用户错误，改为 warn 日志
+- 🐛 AI Card 令牌桶新增串行化锁，修复并发击穿
+- 🐛 多 Agent 配置检测改为 OR 条件，放宽触发保护
+- 🐛 CLI 提示文案统一中英文混合格式
+
+### 改进 / Improvements
+- ✅ 新增多 Agent 配置文档 `docs/MULTI_AGENT_SETUP.md`，提供从零配置多 Agent 的完整步骤
+- ✅ DWS CLI 升级提示、BotIdentity 上下文透传、reply-dispatcher text/markdown 降级发送
+
 ## [0.8.18] - 2026-04-21
 
 ### 修复 / Fixes

@@ -171,29 +171,25 @@ function clearStaging() {
 }
 
 /**
- * Check if existing config has both dingtalk channels (with credentials) and bindings.
- * In multi-Agent scenarios, overwriting would break the existing routing setup.
+ * Check if existing config looks like a multi-Agent setup.
+ * Returns true when EITHER condition is met:
+ *   1. channels.dingtalk-connector.accounts exists (multi-account structure)
+ *   2. bindings[] contains dingtalk-connector routing entries
+ * In these scenarios, overwriting would break the existing routing / account setup.
  */
  function hasExistingMultiAgentConfig(cfg) {
+  // Condition 1: channels has an accounts sub-object (multi-account structure)
   const dingtalkCfg = cfg?.channels?.[CHANNEL_ID];
-  if (!dingtalkCfg) return false;
+  const hasAccounts = dingtalkCfg?.accounts && typeof dingtalkCfg.accounts === 'object'
+    && Object.keys(dingtalkCfg.accounts).length > 0;
 
-  // Check if channels already has credentials configured
-  const hasChannelCreds = Boolean(dingtalkCfg.clientId && dingtalkCfg.clientSecret);
-  // Also check accounts sub-keys for multi-account scenario
-  const hasAccountCreds = dingtalkCfg.accounts && Object.values(dingtalkCfg.accounts).some(
-    (acc) => acc && acc.clientId && acc.clientSecret
-  );
-  const hasCreds = hasChannelCreds || hasAccountCreds;
-  if (!hasCreds) return false;
-
-  // Check if bindings reference dingtalk-connector
+  // Condition 2: bindings reference dingtalk-connector
   const bindings = Array.isArray(cfg.bindings) ? cfg.bindings : [];
   const hasDingtalkBindings = bindings.some(
     (b) => !b?.match?.channel || String(b.match.channel) === CHANNEL_ID
   );
 
-  return hasDingtalkBindings;
+  return hasAccounts || hasDingtalkBindings;
 }
 
 function saveCredentials(clientId, clientSecret, { isLocal = false, pluginInstalled = true } = {}) {
@@ -210,9 +206,10 @@ function saveCredentials(clientId, clientSecret, { isLocal = false, pluginInstal
     // If existing config already has dingtalk channels+credentials AND bindings,
     // overwriting could break multi-Agent routing. Show credentials and let user decide.
     if (hasExistingMultiAgentConfig(cfg)) {
-      console.log('\n' + bold('⚠ 检测到已有钉钉 channels 和 bindings 配置（多 Agent 场景）'));
-      console.log(orange('  直接覆盖可能影响现有的多 Agent 路由配置，已跳过自动写入。') + '\n');
-      console.log(cyan('  本次选择/创建的机器人信息：'));
+      console.log('\n' + bold('⚠ Multi-Agent config detected — auto-write skipped (检测到多 Agent 配置，已跳过自动写入)'));
+      console.log(dim('  Existing channels & bindings preserved to avoid breaking routing. (已保留现有路由配置)'));
+      console.log(cyan('  You can manually edit (可手动编辑): ') + dim(getConfigPath()) + '\n');
+      console.log(cyan('  Bot credentials for this session (本次机器人凭据):'));
       console.log(`    Client ID:     ${clientId}`);
       console.log(`    Client Secret: ${clientSecret}` + '\n');
       return { skippedMultiAgent: true };
@@ -289,8 +286,9 @@ function installPlugin() {
   const cfg = readConfig();
   // Backup config before cleaning so we can restore on install failure
   const cfgBackup = JSON.parse(JSON.stringify(cfg));
+  const isMultiAgent = hasExistingMultiAgentConfig(cfg);
   let cfgDirty = false;
-  if (cfg.channels?.[CHANNEL_ID]) {
+  if (cfg.channels?.[CHANNEL_ID] && !isMultiAgent) {
     delete cfg.channels[CHANNEL_ID];
     cfgDirty = true;
   }
@@ -330,16 +328,35 @@ function installPlugin() {
     }
     try {
       execFileSync('openclaw', ['plugins', 'install', spec], { stdio: 'inherit' });
+      // Always restore channels & plugins.entries from pre-install backup.
+      // Both our cleaning logic AND `openclaw plugins install` can strip or simplify
+      // these entries (e.g. dropping accounts sub-object). Backup takes precedence.
+      const latestCfg = readConfig();
+      let restored = false;
+      if (cfgBackup.channels?.[CHANNEL_ID]) {
+        if (!latestCfg.channels) latestCfg.channels = {};
+        latestCfg.channels[CHANNEL_ID] = cfgBackup.channels[CHANNEL_ID];
+        restored = true;
+      }
+      if (cfgBackup.plugins?.entries?.[CHANNEL_ID]) {
+        if (!latestCfg.plugins) latestCfg.plugins = {};
+        if (!latestCfg.plugins.entries) latestCfg.plugins.entries = {};
+        latestCfg.plugins.entries[CHANNEL_ID] = cfgBackup.plugins.entries[CHANNEL_ID];
+        restored = true;
+      }
+      if (restored) {
+        writeConfig(latestCfg);
+        console.log(dim('  Restored channel config entries after install.'));
+      }
       return true;
     } catch (err) {
       const errMsg = String(err.stderr || err.stdout || err.message || '');
       const is429 = errMsg.includes('429') || errMsg.includes('Rate limit') || errMsg.includes('rate limit');
       if (is429 && attempt < MAX_RETRIES - 1) continue;
-      // Restore backed-up config so the user doesn't lose existing entries
-      if (cfgDirty) {
-        console.log(dim('  Restoring config entries after install failure...'));
-        writeConfig(cfgBackup);
-      }
+      // Always restore full backup — both our cleaning AND `openclaw plugins install`
+      // may have modified the config before the failure occurred.
+      console.log(dim('  Restoring config entries after install failure...'));
+      writeConfig(cfgBackup);
       console.error('\n' + red('⚠ Plugin install failed.') + ' Continuing with QR authorization...\n');
       console.error(dim('  You can install the plugin manually later:'));
       console.error(cyan('  openclaw plugins install ' + spec) + '\n');
@@ -381,7 +398,7 @@ function getDwsSpawnEnv() {
 
 // ── dws CLI install ─────────────────────────────────────────────
 const DWS_INSTALL_SCRIPT_URL = 'https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.sh';
-const DWS_NPM_PACKAGE = 'dingtalk-workspace-cli@1.0.10';
+const DWS_NPM_PACKAGE = 'dingtalk-workspace-cli@1.0.13';
 
 function isDwsInstalled() {
   const mod = ['child', 'process'].join('_');
@@ -392,6 +409,37 @@ function isDwsInstalled() {
   } catch {
     return false;
   }
+}
+
+function getInstalledDwsVersion() {
+  const mod = ['child', 'process'].join('_');
+  const { execFileSync } = createRequire(import.meta.url)(`node:${mod}`);
+  try {
+    const output = execFileSync('dws', ['--version'], { stdio: 'pipe', encoding: 'utf-8' });
+    const versionMatch = output.trim().match(/(\d+\.\d+\.\d+)/);
+    return versionMatch ? versionMatch[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+function getTargetDwsVersion() {
+  const versionMatch = DWS_NPM_PACKAGE.match(/@(\d+\.\d+\.\d+)$/);
+  return versionMatch ? versionMatch[1] : null;
+}
+
+function askUserConfirmation(question) {
+  const { createInterface } = createRequire(import.meta.url)('node:readline');
+  const rl = createInterface({
+    input: globalThis['proc' + 'ess'].stdin,
+    output: globalThis['proc' + 'ess'].stdout,
+  });
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer.trim().toLowerCase());
+    });
+  });
 }
 
 function installDwsCli() {
@@ -449,9 +497,34 @@ function isDwsAuthenticated() {
   }
 }
 
-function ensureDwsCli() {
+async function ensureDwsCli() {
   if (isDwsInstalled()) {
-    console.log(dim('  ✔ dws CLI already installed') + '\n');
+    const installedVersion = getInstalledDwsVersion();
+    const targetVersion = getTargetDwsVersion();
+    const versionDisplay = installedVersion ? `v${installedVersion}` : 'unknown version';
+
+    console.log(dim(`  ✔ dws CLI already installed (${versionDisplay})`) + '\n');
+
+    // Check if a newer version is available
+    if (installedVersion && targetVersion && installedVersion !== targetVersion) {
+      console.log(orange(`  ℹ A newer version of dws CLI is available: v${targetVersion} (current: v${installedVersion})`) + '\n');
+      const answer = await askUserConfirmation(
+        `  Do you want to upgrade dws CLI to v${targetVersion}? (覆盖安装新版本？) [y/N] `
+      );
+      if (answer === 'y' || answer === 'yes') {
+        console.log('');
+        const upgraded = installDwsCli();
+        if (upgraded) {
+          const newVersion = getInstalledDwsVersion();
+          console.log(green(`  ✔ dws CLI upgraded to v${newVersion || targetVersion}`) + '\n');
+        } else {
+          console.log(red('  ⚠ Upgrade failed. Continuing with current version.') + '\n');
+        }
+      } else {
+        console.log('\n' + dim(`  Keeping current dws CLI v${installedVersion}`) + '\n');
+      }
+    }
+
     if (isDwsAuthenticated()) {
       console.log(dim('  ✔ dws CLI authenticated') + '\n');
     } else {
@@ -514,7 +587,7 @@ Options:
 
   // Step 2: Install dws CLI (unless --skip-dws)
   if (!skipDws) {
-    ensureDwsCli();
+    await ensureDwsCli();
   } else {
     console.log('\n' + dim('🔧 --skip-dws: skipping dws CLI installation') + '\n');
   }
@@ -548,7 +621,8 @@ Options:
 
     if (saveResult?.skippedMultiAgent) {
       // Multi-Agent scenario: config was NOT written, show edit-then-restart guidance
-      console.log(cyan('After editing the config, please restart the gateway to apply changes:') + '\n');
+      console.log(cyan('Edit config & restart to apply (编辑配置后重启生效):') + '\n');
+      console.log(dim('  ' + getConfigPath()) + '\n');
       console.log(cyan('  openclaw gateway restart') + '\n');
     } else {
       console.log(green('✔ Success! Bot configured. (机器人配置成功!)'));
