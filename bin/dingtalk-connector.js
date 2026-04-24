@@ -481,33 +481,50 @@ function isDwsAuthenticated() {
 }
 
 async function ensureDwsCli() {
+  const targetVersion = getTargetDwsVersion();
+
   if (isDwsInstalled()) {
     const installedVersion = getInstalledDwsVersion();
-    const targetVersion = getTargetDwsVersion();
     const versionDisplay = installedVersion ? `v${installedVersion}` : 'unknown version';
+    const comparison = (installedVersion && targetVersion) ? compareVersions(targetVersion, installedVersion) : 0;
 
-    console.log(dim(`  ✔ dws CLI already installed (${versionDisplay})`) + '\n');
-
-    // Check if a newer version is available
-    if (installedVersion && targetVersion && installedVersion !== targetVersion) {
-      console.log(orange(`  ℹ A newer version of dws CLI is available: v${targetVersion} (current: v${installedVersion})`) + '\n');
+    if (comparison > 0) {
+      // Scenario 1: target > local → upgrade directly
+      console.log(dim(`  ℹ dws CLI detected (${versionDisplay}), upgrading to v${targetVersion}...`) + '\n');
+      console.log(dim(`    v${installedVersion} → v${targetVersion}`) + '\n');
+      const upgraded = installDwsCli();
+      if (upgraded) {
+        const newVersion = getInstalledDwsVersion();
+        console.log(green(`  ✔ dws CLI upgraded to v${newVersion || targetVersion}`) + '\n');
+      } else {
+        console.log(red('  ⚠ Upgrade failed. Continuing with current version.') + '\n');
+      }
+    } else if (comparison < 0) {
+      // Scenario 2: target < local → ask user before downgrading
+      console.log(dim(`  ℹ dws CLI detected (${versionDisplay})`) + '\n');
+      console.log(orange(`  ⚠ Your local dws CLI (v${installedVersion}) is newer than the bundled version (v${targetVersion}).`) + '\n');
+      console.log(dim(`    Overwriting would downgrade: v${installedVersion} → v${targetVersion}`) + '\n');
       const answer = await askUserConfirmation(
-        `  Do you want to upgrade dws CLI to v${targetVersion}? (覆盖安装新版本？) [y/N] `
+        `  Do you want to overwrite with v${targetVersion}? (是否覆盖为旧版本？) [y/N] `
       );
       if (answer === 'y' || answer === 'yes') {
         console.log('');
-        const upgraded = installDwsCli();
-        if (upgraded) {
+        const downgraded = installDwsCli();
+        if (downgraded) {
           const newVersion = getInstalledDwsVersion();
-          console.log(green(`  ✔ dws CLI upgraded to v${newVersion || targetVersion}`) + '\n');
+          console.log(green(`  ✔ dws CLI replaced with v${newVersion || targetVersion}`) + '\n');
         } else {
-          console.log(red('  ⚠ Upgrade failed. Continuing with current version.') + '\n');
+          console.log(red('  ⚠ Overwrite failed. Continuing with current version.') + '\n');
         }
       } else {
         console.log('\n' + dim(`  Keeping current dws CLI v${installedVersion}`) + '\n');
       }
+    } else {
+      // Scenario 3: versions are equal → skip
+      console.log(dim(`  ✔ dws CLI already installed (${versionDisplay}), version is up to date`) + '\n');
     }
 
+    // Check authentication status regardless of version scenario
     if (isDwsAuthenticated()) {
       console.log(dim('  ✔ dws CLI authenticated') + '\n');
     } else {
@@ -517,6 +534,7 @@ async function ensureDwsCli() {
     return;
   }
 
+  // Scenario 4: dws not installed → install and show version
   const installed = installDwsCli();
   if (!installed) {
     console.log(red('  ⚠ Could not install dws CLI automatically.') + '\n');
@@ -527,7 +545,10 @@ async function ensureDwsCli() {
     return;
   }
 
-  console.log(dim('  ℹ dws CLI installed. Authorization will be triggered when Agent uses dws features.') + '\n');
+  const freshVersion = getInstalledDwsVersion();
+  const freshDisplay = freshVersion ? `v${freshVersion}` : (targetVersion ? `v${targetVersion}` : '');
+  console.log(green(`  ✔ dws CLI installed (${freshDisplay})`) + '\n');
+  console.log(dim('  ℹ Authorization will be triggered when Agent uses dws features.') + '\n');
   console.log(dim('    You can also authorize manually anytime: ') + cyan('dws auth login') + '\n');
 }
 
