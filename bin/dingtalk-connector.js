@@ -206,9 +206,10 @@ function saveCredentials(clientId, clientSecret, { isLocal = false, pluginInstal
     // If existing config already has dingtalk channels+credentials AND bindings,
     // overwriting could break multi-Agent routing. Show credentials and let user decide.
     if (hasExistingMultiAgentConfig(cfg)) {
-      console.log('\n' + bold('⚠ 检测到已有钉钉 channels 和 bindings 配置（多 Agent 场景）'));
-      console.log(orange('  直接覆盖可能影响现有的多 Agent 路由配置，已跳过自动写入。') + '\n');
-      console.log(cyan('  本次选择/创建的机器人信息：'));
+      console.log('\n' + bold('⚠ Multi-Agent config detected — auto-write skipped (已跳过自动写入)'));
+      console.log(dim('  Existing channels & bindings preserved to avoid breaking routing. (已保留现有路由配置)'));
+      console.log(cyan('  You can manually edit (可手动编辑): ') + dim(getConfigPath()) + '\n');
+      console.log(cyan('  Bot credentials for this session (本次机器人凭据):'));
       console.log(`    Client ID:     ${clientId}`);
       console.log(`    Client Secret: ${clientSecret}` + '\n');
       return { skippedMultiAgent: true };
@@ -327,16 +328,17 @@ function installPlugin() {
     }
     try {
       execFileSync('openclaw', ['plugins', 'install', spec], { stdio: 'inherit' });
-      // Always restore channels & plugins.entries after install.
-      // Both our cleaning logic AND `openclaw plugins install` can strip these entries.
+      // Always restore channels & plugins.entries from pre-install backup.
+      // Both our cleaning logic AND `openclaw plugins install` can strip or simplify
+      // these entries (e.g. dropping accounts sub-object). Backup takes precedence.
       const latestCfg = readConfig();
       let restored = false;
-      if (cfgBackup.channels?.[CHANNEL_ID] && !latestCfg.channels?.[CHANNEL_ID]) {
+      if (cfgBackup.channels?.[CHANNEL_ID]) {
         if (!latestCfg.channels) latestCfg.channels = {};
         latestCfg.channels[CHANNEL_ID] = cfgBackup.channels[CHANNEL_ID];
         restored = true;
       }
-      if (cfgBackup.plugins?.entries?.[CHANNEL_ID] && !latestCfg.plugins?.entries?.[CHANNEL_ID]) {
+      if (cfgBackup.plugins?.entries?.[CHANNEL_ID]) {
         if (!latestCfg.plugins) latestCfg.plugins = {};
         if (!latestCfg.plugins.entries) latestCfg.plugins.entries = {};
         latestCfg.plugins.entries[CHANNEL_ID] = cfgBackup.plugins.entries[CHANNEL_ID];
@@ -351,11 +353,10 @@ function installPlugin() {
       const errMsg = String(err.stderr || err.stdout || err.message || '');
       const is429 = errMsg.includes('429') || errMsg.includes('Rate limit') || errMsg.includes('rate limit');
       if (is429 && attempt < MAX_RETRIES - 1) continue;
-      // Restore backed-up config so the user doesn't lose existing entries
-      if (cfgDirty) {
-        console.log(dim('  Restoring config entries after install failure...'));
-        writeConfig(cfgBackup);
-      }
+      // Always restore full backup — both our cleaning AND `openclaw plugins install`
+      // may have modified the config before the failure occurred.
+      console.log(dim('  Restoring config entries after install failure...'));
+      writeConfig(cfgBackup);
       console.error('\n' + red('⚠ Plugin install failed.') + ' Continuing with QR authorization...\n');
       console.error(dim('  You can install the plugin manually later:'));
       console.error(cyan('  openclaw plugins install ' + spec) + '\n');
@@ -620,7 +621,8 @@ Options:
 
     if (saveResult?.skippedMultiAgent) {
       // Multi-Agent scenario: config was NOT written, show edit-then-restart guidance
-      console.log(cyan('After editing the config, please restart the gateway to apply changes:') + '\n');
+      console.log(cyan('Edit config & restart to apply (编辑配置后重启生效):') + '\n');
+      console.log(dim('  ' + getConfigPath()) + '\n');
       console.log(cyan('  openclaw gateway restart') + '\n');
     } else {
       console.log(green('✔ Success! Bot configured. (机器人配置成功!)'));
