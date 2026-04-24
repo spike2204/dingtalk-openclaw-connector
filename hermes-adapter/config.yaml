@@ -1,0 +1,20 @@
+# Connector DingTalk → Hermes Adapter Configuration
+#
+# 使用方式:
+#   cd hermes-adapter
+#   python3 launcher.py
+
+# ── 钉钉机器人账号 ──────────────────────────────────────────────────
+# 可以配置一个或多个钉钉机器人，每个机器人独立连接钉钉。
+accounts:
+  # 机器人1: 你现有的钉钉机器人
+  bot-1:
+    client_id: "dingnqmfzbnjsigbo5pf"
+    client_secret: "k30EZvhVd6IbXkff3WnUiOMML4a0JepYLBeYRlRBr6r7VEhfFCDFSV9_s9k0jJKQ"
+    name: "好钉-hermes"
+    require_mention: false
+  bot-2:
+    client_id: "dingynlyafq4dbd9597b"
+    client_secret: "H2VYwYjPr7D-fDfB0e5gq_d5GMU744aN_OyzKdGYEynJBHrFuALpxn9pdZpLH2KP"
+    name: "好钉-hermes"
+    require_mention: false

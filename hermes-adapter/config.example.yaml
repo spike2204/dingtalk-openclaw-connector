@@ -1,0 +1,51 @@
+# Connector DingTalk → Hermes Adapter Configuration
+# Copy this file to config.yaml and fill in your credentials.
+#
+# Usage:
+#   python -m hermes_adapter.launcher --config config.yaml
+#
+# Alternatively, set environment variables:
+#   DINGTALK_CLIENT_ID=dingXXXX
+#   DINGTALK_CLIENT_SECRET=your_secret
+#   HERMES_PATH=/path/to/hermes-agent
+
+# ── DingTalk Bot Accounts ────────────────────────────────────────────
+# Configure one or more DingTalk bot accounts.
+# Each account connects independently to DingTalk via Stream Mode.
+accounts:
+  # Account ID (arbitrary name, used in logs)
+  my-bot:
+    # DingTalk App Key (required)
+    client_id: "dingXXXXXXXXXX"
+    # DingTalk App Secret (required)
+    client_secret: "your_app_secret_here"
+    # Human-readable name (optional, for logs)
+    name: "My DingTalk Bot"
+    # Whether group chats require @bot mention to trigger (default: false)
+    require_mention: false
+    # AI Card template ID (optional — enables streaming card replies)
+    # If not set, replies use session webhook markdown
+    # card_template_id: "xxx.schema"
+    # Allowed user IDs (optional — empty means allow all)
+    # allowed_users:
+    #   - "user_id_1"
+    #   - "user_id_2"
+    # Group chats that don't require @mention (optional)
+    # free_response_chats:
+    #   - "cidXXXXXXXXXX"
+    # Custom mention patterns for group chats (optional, regex)
+    # mention_patterns:
+    #   - "助手|小助|bot"
+
+  # Example: second bot account
+  # helper-bot:
+  #   client_id: "dingYYYYYYYYYY"
+  #   client_secret: "another_secret"
+  #   name: "Helper Bot"
+  #   require_mention: true
+
+# ── DWS Integration (optional) ──────────────────────────────────────
+# DWS credentials for skill integration.
+# These are injected as environment variables for Hermes Agent.
+# dws_client_id: "your_dws_client_id"
+# dws_client_secret: "your_dws_client_secret"

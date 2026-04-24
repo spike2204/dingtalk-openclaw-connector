@@ -212,9 +212,17 @@ function saveCredentials(clientId, clientSecret, { isLocal = false, pluginInstal
     if (hasExistingMultiAgentConfig(cfg)) {
       console.log('\n' + bold('⚠ 检测到已有钉钉 channels 和 bindings 配置（多 Agent 场景）'));
       console.log(orange('  直接覆盖可能影响现有的多 Agent 路由配置，已跳过自动写入。') + '\n');
-      console.log(cyan('  本次选择/创建的机器人信息：'));
+      console.log(cyan('  本次扫码创建的机器人信息：'));
       console.log(`    Client ID:     ${clientId}`);
       console.log(`    Client Secret: ${clientSecret}` + '\n');
+      console.log(bold('💡 要将这个机器人配置为新 Agent，请运行：') + '\n');
+      console.log(cyan(`  dingtalk-connector add-agent \\`));
+      console.log(cyan(`    --name <agent-name> \\`));
+      console.log(cyan(`    --prompt "你的 Agent 系统提示词" \\`));
+      console.log(cyan(`    --client-id ${clientId} \\`));
+      console.log(cyan(`    --client-secret ${clientSecret}`) + '\n');
+      console.log(dim('  该命令会自动注册 Agent、绑定机器人并重启 gateway。'));
+      console.log(dim('  详见: docs/MULTI_AGENT_SETUP.md') + '\n');
       return { skippedMultiAgent: true };
     }
 
