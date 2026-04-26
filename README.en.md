@@ -24,10 +24,13 @@ This plugin provides comprehensive DingTalk integration for OpenClaw:
 
 | Category | Capabilities |
 |----------|-------------|
+| 📄 Docs | Create, append, search, and list DingTalk documents |
+| 🔔 DING | Send urgent DING reminders to users/groups |
 | 💬 Messaging | Receive group/DM messages, auto-reply, send text/Markdown, @mentions |
 | ✅ Tasks | Create personal tasks, check status, set deadlines |
 | 📊 AI Sheets | Create sheets, read/write rows, conditional queries |
 | 📅 Calendar | Calendar management, event management (create/query/modify/delete/search), attendee management, free/busy queries |
+| 📝 Reports | Submit daily/weekly reports, query history |
 
 Additionally, the plugin supports:
 
@@ -42,11 +45,8 @@ Additionally, the plugin supports:
 
 | Category | Capabilities |
 |----------|-------------|
-| 🔔 DING | Send urgent DING reminders to users/groups |
 | ✅ Tasks | Create group tasks, check status, set deadlines |
-| 📝 Reports | Submit daily/weekly reports, query history |
 | 📁 Drive | Upload/download files to DingTalk Drive |
-| 📄 Docs | Create, append, search, and list DingTalk documents |
 
 ---
 
