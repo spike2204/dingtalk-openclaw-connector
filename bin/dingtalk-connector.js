@@ -428,6 +428,22 @@ function getTargetDwsVersion() {
   return versionMatch ? versionMatch[1] : null;
 }
 
+/**
+ * Compare two semver version strings.
+ * Returns: positive if a > b, negative if a < b, 0 if equal.
+ */
+function compareVersions(versionA, versionB) {
+  const partsA = versionA.split('.').map(Number);
+  const partsB = versionB.split('.').map(Number);
+  const maxLength = Math.max(partsA.length, partsB.length);
+  for (let i = 0; i < maxLength; i++) {
+    const partA = partsA[i] || 0;
+    const partB = partsB[i] || 0;
+    if (partA !== partB) return partA - partB;
+  }
+  return 0;
+}
+
 function askUserConfirmation(question) {
   const { createInterface } = createRequire(import.meta.url)('node:readline');
   const rl = createInterface({
