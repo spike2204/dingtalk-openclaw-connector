@@ -68,7 +68,10 @@ export function getDwsSpawnEnv(accountId?: string): Record<string, string> {
   return {
     ..._env.env as Record<string, string>,
     DINGTALK_AGENT: "DING_DWS_CLAW",
-    ...(creds?.clientId && { DWS_CLIENT_ID: creds.clientId }),
+    // Note: DWS_CLIENT_ID is intentionally NOT injected here.
+    // The bot's clientId (DINGTALK_CLIENT_ID) is for Stream connections only.
+    // dws CLI uses a separate OAuth app ID managed by MCP server — injecting
+    // the bot's clientId would override the MCP lookup and cause auth failure.
     ...(creds?.clientSecret && { DWS_CLIENT_SECRET: creds.clientSecret }),
   };
 }
@@ -491,12 +494,11 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
           clientId: String(account.clientId),
           clientSecret: String(account.clientSecret),
         });
-        // Expose clientId (non-sensitive) in process.env so that AI agents
-        // can read it via `echo $DWS_CLIENT_ID` and inject `--client-id`
-        // into dws CLI commands for correct bot identity isolation.
-        // Note: in multi-bot setups the last-started bot's clientId wins,
-        // but the skill prompt instructs the AI to always read & pass it.
-        _env.env.DWS_CLIENT_ID = String(account.clientId);
+        // Note: Do NOT set DWS_CLIENT_ID to the bot's clientId.
+        // The bot's clientId is for Stream connections (DINGTALK_CLIENT_ID).
+        // dws CLI OAuth uses a separate app ID fetched from MCP server;
+        // injecting the bot's clientId would short-circuit the MCP lookup
+        // and cause OAuth authorization failure.
       }
 
       ctx.setStatus({ accountId: ctx.accountId, port: null });
